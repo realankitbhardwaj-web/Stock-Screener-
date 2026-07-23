@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAR + DMA Breakout Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f0d; --panel:#111813; --line:#1e2a22; --text:#dfe8e2; --muted:#7d9186;
+    --green:#3ddc84; --red:#ff5c5c; --amber:#e8c468; --accent:#2ee6a6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Courier New', ui-monospace, monospace;
+    padding:16px; padding-bottom:60px;
+  }
+  h1{
+    font-size:1.15rem; letter-spacing:0.5px; margin:0 0 4px 0; color:var(--accent);
+    display:flex; align-items:center; gap:8px;
+  }
+  .sub{color:var(--muted); font-size:0.78rem; margin-bottom:16px;}
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:14px; margin-bottom:14px;
+  }
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  textarea{
+    width:100%; min-height:90px; background:#0d1310; color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:10px;
+    font-family:inherit; font-size:0.82rem; resize:vertical;
+  }
+  button{
+    background:var(--accent); color:#04140d; border:none; border-radius:8px;
+    padding:10px 16px; font-weight:700; font-size:0.85rem; cursor:pointer;
+    font-family:inherit; letter-spacing:0.3px;
+  }
+  button.secondary{ background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled{ opacity:0.4; cursor:not-allowed; }
+  .progress-wrap{
+    height:8px; background:#0d1310; border-radius:6px; overflow:hidden; margin-top:10px; border:1px solid var(--line);
+  }
+  .progress-bar{ height:100%; background:var(--accent); width:0%; transition:width .2s; }
+  .status{ font-size:0.78rem; color:var(--muted); margin-top:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:0.78rem; }
+  th{
+    text-align:left; color:var(--muted); font-weight:600; padding:8px 6px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel);
+    white-space:nowrap;
+  }
+  td{ padding:8px 6px; border-bottom:1px solid #16201a; white-space:nowrap; }
+  tr:hover td{ background:#0d1712; }
+  .tbl-scroll{ overflow-x:auto; }
+  .pos{ color:var(--green); font-weight:700; }
+  .neg{ color:var(--red); }
+  .ticker{ color:var(--text); font-weight:700; }
+  .footer-note{ color:var(--muted); font-size:0.72rem; margin-top:10px; line-height:1.5; }
+  .badge{
+    display:inline-block; padding:2px 8px; border-radius:20px; font-size:0.7rem; font-weight:700;
+  }
+  .badge.ok{ background:rgba(61,220,132,0.15); color:var(--green); }
+  .empty{ color:var(--muted); text-align:center; padding:30px 10px; font-size:0.85rem; }
+</style>
+</head>
+<body>
+
+<h1>📈 CAR + DMA Breakout Scanner</h1>
+<div class="sub">30/50/200 DMA + Cumulative Average trend filter — runs entirely in the browser, works on mobile.</div>
+
+<div class="panel">
+  <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+    <strong style="font-size:0.85rem;">Ticker List (NSE, one per line or comma-separated)</strong>
+    <button class="secondary" id="resetBtn" type="button">Reset to default 210</button>
+  </div>
+  <textarea id="tickerBox" spellcheck="false"></textarea>
+
+  <div class="row" style="margin-top:12px;">
+    <button id="scanBtn">▶ Run Scan</button>
+    <button class="secondary" id="testBtn" type="button">🔧 Test Connection</button>
+    <button class="secondary" id="exportBtn" disabled>⬇ Export Excel</button>
+    <span class="status" id="statusText"></span>
+  </div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+</div>
+
+<div class="panel">
+  <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+    <strong style="font-size:0.85rem;">🟢 Positive Breakout Results</strong>
+    <span class="badge ok" id="countBadge" style="display:none;"></span>
+  </div>
+  <div class="tbl-scroll">
+    <table id="resultsTable" style="display:none;">
+      <thead>
+        <tr>
+          <th>Date</th><th>Stock</th><th>CMP</th><th>30 DMA</th><th>50 DMA</th>
+          <th>200 DMA</th><th>200 DMA Dist %</th><th>CAR Status</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg">Scan not run yet.</div>
+  </div>
+</div>
+
+<div class="footer-note">
+  Data via Yahoo Finance (proxied). Rule: CMP &gt; 30/50/200 DMA <em>and</em> CAR (cumulative average from the 52-week high) rising for 10 straight sessions.
+  Not investment advice — verify before trading. Large lists take a few minutes; keep the tab open while scanning.
+</div>
+
+<script>
+const DEFAULT_TICKERS = [
+'360ONE','ABB','APLAPOLLO','AUBANK','ADANIENSOL','ADANIENT','ADANIGREEN','ADANIPORTS','ADANIPOWER','ABCAPITAL',
+'ALKEM','AMBER','AMBUJACEM','ANGELONE','APOLLOHOSP','ASHOKLEY','ASIANPAINT','ASTRAL','AUROPHARMA','DMART',
+'AXISBANK','BSE','BAJAJ-AUTO','BAJFINANCE','BAJAJFINSV','BAJAJHLDNG','BANDHANBNK','BANKBARODA','BANKINDIA','BDL',
+'BEL','BHARATFORG','BHEL','BPCL','BHARTIARTL','BIOCON','BLUESTARCO','BOSCHLTD','BRITANNIA','CGPOWER',
+'CANBK','CDSL','CHOLAFIN','CIPLA','COALINDIA','COCHINSHIP','COFORGE','COLPAL','CAMS','CONCOR',
+'CROMPTON','CUMMINSIND','DLF','DABUR','DALBHARAT','DELHIVERY','DIVISLAB','DIXON','DRREDDY','ETERNAL',
+'EICHERMOT','EXIDEIND','FORCEMOT','NYKAA','FORTIS','GAIL','GVT&D','GMRAIRPORT','GLENMARK','GODFRYPHLP',
+'GODREJCP','GODREJPROP','GRASIM','HCLTECH','HDFCAMC','HDFCBANK','HDFCLIFE','HAVELLS','HEROMOTOCO','HINDALCO',
+'HAL','HINDPETRO','HINDUNILVR','HINDZINC','POWERINDIA','HYUNDAI','ICICIBANK','ICICIGI','ICICIPRULI','IDFCFIRSTB',
+'ITC','INDIANB','IEX','IOC','IRFC','IREDA','INDUSTOWER','INDUSINDBK','NAUKRI','INFY',
+'INOXWIND','INDIGO','JINDALSTEL','JSWENERGY','JSWSTEEL','JIOFIN','JUBLFOOD','KEI','KPITTECH','KALYANKJIL',
+'KAYNES','KFINTECH','KOTAKBANK','LTF','LICHSGFIN','LTM','LT','LAURUSLABS','LICI','LODHA',
+'LUPIN','M&M','MANAPPURAM','MANKIND','MARICO','MARUTI','MFSL','MAXHEALTH','MAZDOCK','MOTILALOFS',
+'MPHASIS','MCX','MUTHOOTFIN','NBCC','NHPC','NMDC','NTPC','NATIONALUM','NESTLEIND','NAM-INDIA',
+'NUVAMA','OBEROIRLTY','ONGC','OIL','PAYTM','OFSS','POLICYBZR','PGEL','PIIND','PNBHOUSING',
+'PAGEIND','PATANJALI','PERSISTENT','PETRONET','PIDILITIND','POLYCAB','PFC','POWERGRID','PREMIERENE','PRESTIGE',
+'PNB','RBLBANK','RECLTD','RADICO','RVNL','RELIANCE','SBICARD','SBILIFE','SHREECEM','SRF',
+'MOTHERSON','SHRIRAMFIN','SIEMENS','SOLARINDS','SONACOMS','SBIN','SAIL','SUNPHARMA','SUPREMEIND','SUZLON',
+'SWIGGY','TATACONSUM','TVSMOTOR','TCS','TATAELXSI','TMPV','TATAPOWER','TATASTEEL','TECHM','FEDERALBNK',
+'INDHOTEL','PHOENIXLTD','TITAN','TORNTPHARM','TRENT','TIINDIA','UNOMINDA','UPL','ULTRACEMCO','UNIONBANK',
+'UNITDSPR','VBL','VEDL','VMM','IDEA','VOLTAS','WAAREEENER','WIPRO','YESBANK','ZYDUSLIFE'
+];
+
+const tickerBox = document.getElementById('tickerBox');
+const scanBtn = document.getElementById('scanBtn');
+const exportBtn = document.getElementById('exportBtn');
+const resetBtn = document.getElementById('resetBtn');
+const statusText = document.getElementById('statusText');
+const progressBar = document.getElementById('progressBar');
+const resultsTable = document.getElementById('resultsTable');
+const resultsBody = document.getElementById('resultsBody');
+const emptyMsg = document.getElementById('emptyMsg');
+const countBadge = document.getElementById('countBadge');
+
+function fillDefault(){ tickerBox.value = DEFAULT_TICKERS.join(', '); }
+fillDefault();
+resetBtn.onclick = fillDefault;
+
+function parseTickers(raw){
+  return raw.split(/[,\n]/).map(s=>s.trim().toUpperCase()).filter(Boolean);
+}
+
+function mean(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
+
+function sma(closes, window, idx){
+  // idx = index in closes to compute SMA ending at (inclusive)
+  if(idx+1 < window) return null;
+  const slice = closes.slice(idx+1-window, idx+1);
+  return mean(slice);
+}
+
+const PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`
+];
+
+async function fetchWithTimeout(url, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
+  try{
+    const res = await fetch(url, {signal: ctrl.signal});
+    clearTimeout(t);
+    return res;
+  }catch(e){ clearTimeout(t); throw e; }
+}
+
+async function fetchYahoo(symbol){
+  // 300 calendar days is enough for 200 DMA + 252-session high, and cuts payload vs 2y
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}.NS?range=1y&interval=1d`;
+  let lastErr;
+  for(const buildProxy of PROXIES){
+    try{
+      const res = await fetchWithTimeout(buildProxy(target), 8000);
+      if(!res.ok) throw new Error('bad status');
+      const json = await res.json();
+      const result = json.chart && json.chart.result && json.chart.result[0];
+      if(!result) throw new Error('no data');
+      return parseYahooResult(result);
+    }catch(e){ lastErr = e; continue; }
+  }
+  throw lastErr || new Error('all proxies failed');
+}
+
+function parseYahooResult(result){
+  const timestamps = result.timestamp;
+  const quote = result.indicators.quote[0];
+  const closes = quote.close;
+  const highs = quote.high;
+  if(!timestamps || !closes) throw new Error('bad data');
+  const rows = [];
+  for(let i=0;i<timestamps.length;i++){
+    if(closes[i]==null || highs[i]==null) continue;
+    rows.push({ t: timestamps[i], close: closes[i], high: highs[i] });
+  }
+  return rows;
+}
+function analyze(symbol, rows){
+  if(rows.length < 200) return null;
+  const closes = rows.map(r=>r.close);
+  const n = closes.length;
+  const lastIdx = n-1;
+
+  const dma30 = sma(closes, 30, lastIdx);
+  const dma50 = sma(closes, 50, lastIdx);
+  const dma200 = sma(closes, 200, lastIdx);
+  if(dma30==null||dma50==null||dma200==null) return null;
+
+  const cmp = closes[lastIdx];
+  const dist200 = ((cmp - dma200)/dma200)*100;
+
+  // last 252 sessions for 52w high
+  const last1y = rows.slice(Math.max(0, n-252));
+  let highIdxInSlice = 0;
+  let maxHigh = -Infinity;
+  last1y.forEach((r,i)=>{ if(r.high > maxHigh){ maxHigh = r.high; highIdxInSlice = i; } });
+  const highIdxGlobal = (n-last1y.length) + highIdxInSlice;
+
+  const carData = closes.slice(highIdxGlobal); // from high date to today
+  if(carData.length < 10) return null;
+
+  // expanding mean (cumulative average) across carData
+  const carValues = [];
+  let running = 0;
+  for(let i=0;i<carData.length;i++){
+    running += carData[i];
+    carValues.push(running/(i+1));
+  }
+  const last10 = carValues.slice(-10);
+  let monotonic = true;
+  for(let i=1;i<last10.length;i++){
+    if(last10[i] < last10[i-1]){ monotonic = false; break; }
+  }
+  const carStatus = monotonic ? 'Positive' : 'Negative';
+
+  const breakout = (cmp>dma30) && (cmp>dma50) && (cmp>dma200) && (carStatus==='Positive');
+
+  return {
+    symbol, cmp, dma30, dma50, dma200, dist200, carStatus, breakout
+  };
+}
+
+async function runScan(){
+  const tickers = parseTickers(tickerBox.value);
+  if(tickers.length===0){ alert('Ticker list khaali hai'); return; }
+
+  scanBtn.disabled = true;
+  exportBtn.disabled = true;
+  resultsBody.innerHTML = '';
+  resultsTable.style.display = 'none';
+  emptyMsg.style.display = 'block';
+  emptyMsg.textContent = 'Scanning...';
+  countBadge.style.display = 'none';
+
+  const CONCURRENCY = 15;
+  let completed = 0;
+  let failed = 0;
+  const results = [];
+  const todayStr = new Date().toLocaleDateString('en-GB').split('/').join('-');
+
+  async function worker(queue){
+    while(queue.length){
+      const symbol = queue.shift();
+      try{
+        const rows = await fetchYahoo(symbol);
+        const r = analyze(symbol, rows);
+        if(r && r.breakout){
+          results.push({
+            Date: todayStr,
+            Stock: r.symbol,
+            CMP: +r.cmp.toFixed(2),
+            '30 DMA': +r.dma30.toFixed(2),
+            '50 DMA': +r.dma50.toFixed(2),
+            '200 DMA': +r.dma200.toFixed(2),
+            '200 DMA Dist %': +r.dist200.toFixed(2),
+            'CAR Status': r.carStatus,
+            'Action': '🟢 Positive Breakout'
+          });
+        }
+      }catch(e){ failed++; }
+      completed++;
+      const pct = Math.round((completed/tickers.length)*100);
+      progressBar.style.width = pct + '%';
+      statusText.textContent = `${completed}/${tickers.length} scanned...`;
+    }
+  }
+
+  const queue = tickers.slice();
+  const workers = [];
+  for(let i=0;i<CONCURRENCY;i++) workers.push(worker(queue));
+  await Promise.all(workers);
+
+  results.sort((a,b)=> a['200 DMA Dist %'] - b['200 DMA Dist %']);
+  renderResults(results);
+
+  scanBtn.disabled = false;
+  if(failed > tickers.length * 0.6){
+    statusText.textContent = `⚠ ${failed}/${tickers.length} fetch fail hue — proxy/network issue lagta hai, dobara try karo.`;
+  } else {
+    statusText.textContent = `Done — ${results.length} breakout(s) found. (${failed} tickers fetch fail hue)`;
+  }
+}
+
+function renderResults(results){
+  window.__lastResults = results;
+  resultsBody.innerHTML = '';
+  if(results.length===0){
+    resultsTable.style.display='none';
+    emptyMsg.style.display='block';
+    emptyMsg.textContent = 'Koi stock aaj saari shart pass nahi kar paaya. (No breakout today)';
+    countBadge.style.display='none';
+    exportBtn.disabled = true;
+    return;
+  }
+  emptyMsg.style.display='none';
+  resultsTable.style.display='table';
+  countBadge.style.display='inline-block';
+  countBadge.textContent = results.length + ' found';
+
+  results.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.Date}</td>
+      <td class="ticker">${r.Stock}</td>
+      <td>${r.CMP}</td>
+      <td>${r['30 DMA']}</td>
+      <td>${r['50 DMA']}</td>
+      <td>${r['200 DMA']}</td>
+      <td class="${r['200 DMA Dist %']>=0?'pos':'neg'}">${r['200 DMA Dist %']}%</td>
+      <td class="pos">${r['CAR Status']}</td>
+    `;
+    resultsBody.appendChild(tr);
+  });
+  exportBtn.disabled = false;
+}
+
+function exportExcel(){
+  const results = window.__lastResults || [];
+  if(results.length===0) return;
+  const ws = XLSX.utils.json_to_sheet(results);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Breakouts');
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Final_Breakout_List_${dateStr}.xlsx`);
+}
+
+async function testConnection(){
+  statusText.textContent = 'Testing...';
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS?range=1y&interval=1d`;
+  let log = [];
+  for(const buildProxy of PROXIES){
+    const url = buildProxy(target);
+    try{
+      const res = await fetchWithTimeout(url, 8000);
+      log.push(`${new URL(url).hostname}: HTTP ${res.status}`);
+      if(res.ok){
+        const json = await res.json();
+        const ok = !!(json.chart && json.chart.result && json.chart.result[0]);
+        log.push(`  → JSON parsed, data present: ${ok}`);
+      }
+    }catch(e){
+      log.push(`${new URL(url).hostname}: FAILED — ${e.name}: ${e.message}`);
+    }
+  }
+  statusText.textContent = log.join(' | ');
+  console.log(log.join('\n'));
+  alert(log.join('\n'));
+}
+
+scanBtn.onclick = runScan;
+exportBtn.onclick = exportExcel;
+document.getElementById('testBtn').onclick = testConnection;
+</script>
+</body>
+</html>
