@@ -1,0 +1,2075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Ankit V4 Terminal</title>
+<style>
+:root{
+  --bg:#ffffff; --panel:#f8f9fb; --panel2:#f1f3f6; --border:#e0e3eb;
+  --text:#131722; --muted:#787b86; --green:#089981; --red:#f23645;
+  --blue:#2962ff; --teal:#089981; --amber:#ff9800; --purple:#7e57c2;
+  --accent:#2962ff;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  overflow:hidden; user-select:none;}
+#app{display:flex; flex-direction:column; height:100vh; width:100vw; position:relative;}
+
+/* ===== TOP BAR ===== */
+#topbar{display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--panel);
+  border-bottom:1px solid var(--border); flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;}
+#topbar::-webkit-scrollbar{display:none;}
+#topbar > *{flex-shrink:0;}
+#topbar .brand{font-weight:700; font-size:13px; color:var(--accent); letter-spacing:.5px; margin-right:6px;}
+.chip-btn{background:var(--panel2); border:1px solid var(--border); color:var(--text);
+  padding:5px 9px; border-radius:6px; font-size:12px; cursor:pointer; white-space:nowrap;}
+.chip-btn.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+.chip-btn:active{opacity:.7;}
+#topbar select{background:var(--panel2); color:var(--text); border:1px solid var(--border);
+  border-radius:6px; padding:5px 6px; font-size:12px;}
+#tfSelect{min-width:66px;}
+.spacer{flex:1;}
+.led{width:11px;height:11px;border-radius:50%;background:var(--red); box-shadow:0 0 8px var(--red); display:inline-block; animation:ledBlink 1.4s ease-in-out infinite;}
+.led.live{background:var(--green); box-shadow:0 0 8px var(--green);}
+@keyframes ledBlink{0%,100%{opacity:1;} 50%{opacity:.35;}}
+#status{font-size:11px; color:var(--muted); display:flex; align-items:center;}
+
+/* ===== MAIN AREA ===== */
+#main{flex:1; position:relative; overflow:hidden; display:flex;}
+#chartWrap{flex:1; position:relative; min-width:0;}
+canvas{display:block; touch-action:none;}
+#priceLabel{position:absolute; right:0; background:var(--accent); color:#fff; font-size:12px;
+  padding:3px 7px; border-radius:3px 0 0 3px; pointer-events:none; font-weight:700; z-index:6;}
+#crosshairInfo{position:absolute; top:8px; left:8px; background:rgba(255,255,255,.97); border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,.1);
+  border-radius:6px; padding:6px 9px; font-size:11px; line-height:1.5; pointer-events:none; z-index:5; max-width:260px;}
+#crosshairInfo b{color:var(--text)}
+#crosshairInfo .up{color:var(--green)} #crosshairInfo .dn{color:var(--red)}
+
+/* ===== FULLSCREEN: only the chart + a compact TradingView-style symbol/price readout stay visible ===== */
+#fsInfo{position:absolute; top:12px; left:12px; z-index:8; display:flex; flex-direction:column; gap:3px; pointer-events:none;}
+.fsRow1{display:flex; align-items:center; gap:6px;}
+.fsRow2{display:flex; flex-direction:column; align-items:flex-start; gap:3px;}
+#fsInfo #fsSymbol{font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.4px; text-transform:uppercase;
+  text-shadow:0 1px 3px rgba(255,255,255,.9);}
+#fsInfo #fsPrice{font-size:24px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; line-height:1;
+  text-shadow:0 1px 3px rgba(255,255,255,.9);}
+#fsInfo #fsPrice.up{color:var(--green);} #fsInfo #fsPrice.dn{color:var(--red);}
+#fsInfo #fsChange{font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; padding:2px 7px; border-radius:5px;}
+#fsInfo #fsChange.up{color:var(--green); background:rgba(8,153,129,.14);}
+#fsInfo #fsChange.dn{color:var(--red); background:rgba(242,54,69,.14);}
+#app.fs-mode #topbar{display:none;}
+#app.fs-mode #fsInfo{display:flex;}
+/* fsInfo sits directly over crosshairInfo's usual top-left spot — push the crosshair
+   readout down below it in fullscreen so the two don't stack on top of each other. */
+#app.fs-mode #crosshairInfo{top:64px;}
+/* two floating buttons in fullscreen: Indicators (top) + Exit fullscreen (below it) */
+#fsToggleTopbar, #fsIndicatorsBtn{display:none; position:absolute; right:10px; z-index:9; width:34px; height:34px;
+  align-items:center; justify-content:center; background:rgba(255,255,255,.92); border:1px solid var(--border);
+  border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.12); font-size:15px; cursor:pointer; color:var(--text);}
+#fsIndicatorsBtn{top:10px;}
+#fsToggleTopbar{top:50px;}
+#app.fs-mode #fsToggleTopbar, #app.fs-mode #fsIndicatorsBtn{display:flex;}
+
+/* ===== INDICATORS DROPDOWN (keeps the topbar from filling up with chip buttons) ===== */
+.dropdown-wrap{position:relative;}
+.dropdown-panel{position:fixed; background:var(--panel); border:1px solid var(--border);
+  border-radius:8px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:35; display:flex; flex-direction:column; gap:4px; min-width:150px;}
+.dropdown-panel.hidden{display:none;}
+.dropdown-panel .chip-btn{width:100%; text-align:left;}
+
+/* ===== SETTINGS DRAWER ===== */
+#settingsDrawer{position:fixed; top:0; right:-340px; width:320px; height:100%; background:var(--panel);
+  border-left:1px solid var(--border); z-index:50; transition:right .2s ease; overflow-y:auto; padding:12px;}
+#settingsDrawer.open{right:0;}
+#settingsDrawer h3{margin:4px 0 10px; font-size:13px; color:var(--accent);}
+#settingsDrawer h4{margin:14px 0 6px; font-size:11px; color:var(--muted); text-transform:uppercase; border-top:1px solid var(--border); padding-top:10px;}
+.row{display:flex; align-items:center; justify-content:space-between; padding:4px 0; font-size:12px; gap:6px;}
+.row input[type=number]{width:60px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:3px 5px;}
+.row input[type=color]{width:34px; height:24px; border:none; background:none; padding:0;}
+.row input[type=text]{width:80px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:4px; padding:3px 5px;}
+.row select{background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:3px;}
+.toggle{width:34px; height:18px; background:var(--panel2); border:1px solid var(--border); border-radius:10px; position:relative; cursor:pointer;}
+.toggle .dot{width:14px; height:14px; border-radius:50%; background:var(--muted); position:absolute; top:1px; left:1px; transition:.15s;}
+.toggle.on{background:rgba(79,140,255,.25); border-color:var(--accent);}
+.toggle.on .dot{left:17px; background:var(--accent);}
+#closeSettings{position:absolute; top:10px; right:10px; background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer;}
+.emaRow{display:flex; align-items:center; gap:6px; padding:3px 0;}
+.emaRow input[type=number]{width:50px;}
+.emaRow button{background:var(--panel2); border:1px solid var(--border); color:var(--red); border-radius:4px; padding:2px 6px; cursor:pointer; font-size:11px;}
+#addEma{background:var(--accent); border:none; color:#fff; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer; margin-top:4px;}
+
+/* ===== overlay backdrop for drawer on mobile ===== */
+#drawerBackdrop{position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:40; display:none;}
+#drawerBackdrop.show{display:block;}
+
+/* mobile landscape optimizer */
+@media (max-width:900px){
+  #topbar .brand{display:none;}
+}
+@media (orientation:landscape) and (max-height:500px){
+  #topbar{padding:3px 6px;} .chip-btn{padding:3px 7px; font-size:11px;}
+}
+::-webkit-scrollbar{width:6px; height:6px;} ::-webkit-scrollbar-thumb{background:var(--border); border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <span class="brand">ANKIT</span>
+    <select id="symbolSelect">
+      <option value="BTCUSDT">BTCUSDT</option>
+      <option value="ETHUSDT">ETHUSDT</option>
+      <option value="SOLUSDT">SOLUSDT</option>
+      <option value="XAUUSDT">XAUUSDT</option>
+      <option value="XAGUSDT">XAGUSDT</option>
+      <option value="PAXGUSDT">PAXGUSDT</option>
+    </select>
+    <div class="dropdown-wrap">
+      <button class="chip-btn" id="btnIndicators">📊 Indicators</button>
+    </div>
+    <select id="tfSelect"></select>
+    <div class="spacer"></div>
+    <span id="status"><span class="led" id="ledDot"></span></span>
+    <button class="chip-btn" id="btnSettings">⚙ Settings</button>
+    <button class="chip-btn" id="btnFullscreen">⛶</button>
+  </div>
+
+  <div id="main">
+    <div id="chartWrap">
+      <canvas id="chartCanvas"></canvas>
+      <div id="priceLabel" style="display:none;"></div>
+      <div id="crosshairInfo" style="display:none;"></div>
+      <div id="fsInfo" style="display:none;">
+        <div class="fsRow1"><span class="led" id="ledDotFs"></span><span id="fsSymbol"></span></div>
+        <div class="fsRow2"><span id="fsPrice"></span><span id="fsChange"></span></div>
+      </div>
+      <button id="fsIndicatorsBtn" title="Indicators">📊</button>
+      <button id="fsToggleTopbar" title="Exit fullscreen">⛶</button>
+      <div id="indicatorDropdown" class="dropdown-panel hidden">
+        <button class="chip-btn active" id="btnST">Supertrend</button>
+        <button class="chip-btn" id="btnRenkoLine">Renko Line</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="drawerBackdrop"></div>
+  <div id="settingsDrawer">
+    <button id="closeSettings">✕</button>
+    <h3>Settings</h3>
+
+    <h4>Renko Chart (bricks)</h4>
+    <div class="row">Mode
+      <select id="renkoMode"><option value="pct">Percentage %</option><option value="fixed">Fixed Points</option></select>
+    </div>
+    <div class="row">Box Size <input type="number" id="renkoSize" value="0.1" step="0.01"></div>
+
+    <h4>Renko Line (overlay indicator)</h4>
+    <div class="row">Mode
+      <select id="rlMode"><option value="pct">Percentage %</option><option value="fixed">Fixed Points</option></select>
+    </div>
+    <div class="row">Box Size <input type="number" id="rlSize" value="0.1" step="0.01"></div>
+
+    <h4>Supertrend</h4>
+    <div class="row">Source
+      <select id="stSource"><option value="close" selected>Close</option><option value="hl2">HL2</option></select>
+    </div>
+    <div class="row">ATR Period <input type="number" id="stPeriod" value="10"></div>
+    <div class="row">Multiplier <input type="number" id="stMult" value="3.0" step="0.1"></div>
+  </div>
+
+</div>
+<script>
+/* =========================================================================
+   ANKIT V4 TERMINAL
+   Single-file trading chart engine — Binance WS/REST, Candlestick + Renko,
+   EMA engine, and the custom "Ankit V4" merged indicator ported from Pine v6:
+     - Kalman filter + ZLEMA slow line
+     - SuperIchi (ATR trailing channel Tenkan/Kijun) cloud + signals
+     - Ichimoku Kumo (classic)
+     - Renko brick overlay line
+     - Reversal Entry Zones engine (pivot + ATR threshold, boxes/labels/dash)
+     - Breakout Probability Statistics engine
+   Modules are grouped by section below. Everything is vanilla JS + Canvas2D
+   (no external chart library) so the custom Renko/overlay rendering is fully
+   controllable in one file.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------
+   0. CONFIG / GLOBAL STATE
+   --------------------------------------------------------------------- */
+const CFG = {
+  // XAUUSDT is real now — Binance launched it Jan 8 2026 as a USDT-margined TradFi
+  // perpetual future (gold), not a spot pair. So it needs the FUTURES API (fapi/fstream),
+  // not spot — that mismatch (we were substituting PAXGUSDT off the spot API) is exactly
+  // why the price didn't match Binance's own XAUUSDT page.
+  // XAGUSDT (silver) launched the same way, same TradFi Perp category — also futures.
+  // PAXGUSDT (PAX Gold) is a SPOT pair, unlike XAUUSDT/XAGUSDT which are futures TradFi
+  // perps — this matters because Binance's spot klines API supports the '1s' interval, so
+  // sub-1-minute timeframes actually work here (they don't for the metals futures).
+  // ETHUSDT/SOLUSDT are ordinary Binance spot pairs, same as BTCUSDT.
+  symbolMarket: { BTCUSDT: 'spot', ETHUSDT: 'spot', SOLUSDT: 'spot', XAUUSDT: 'futures', XAGUSDT: 'futures', PAXGUSDT: 'spot' },
+  nativeIntervals: ['1s','1m','3m','5m','15m','30m','1h','2h','4h','6h','1d'],
+  tfMs: {
+    '1s':1000,'3s':3000,'5s':5000,'15s':15000,'30s':30000,
+    '1m':60000,'2m':120000,'3m':180000,'5m':300000,'10m':600000,'15m':900000,'30m':1800000,'45m':2700000,
+    '1h':3600000,'90m':5400000,'2h':7200000,'3h':10800000,'4h':14400000,'6h':21600000,
+    '1d':86400000
+  },
+  spotRestBase: 'https://api.binance.com',
+  spotWsBase: 'wss://stream.binance.com:9443/ws/',
+  futuresRestBase: 'https://fapi.binance.com',
+  // Binance split futures WS streams into routed paths (/public, /market, /private) in
+  // 2026 and fully decommissioned the old unrouted wss://fstream.../ws/ URL — kline data
+  // lives under /market, so it must be explicitly routed or it silently delivers nothing
+  // (the connection still opens fine, which is why this failure mode shows "live" with no data).
+  futuresWsBase: 'wss://fstream.binance.com/market/ws/',
+  historyBars: 150,
+  restLimitCap: 1000
+};
+
+function marketFor(displaySymbol){ return CFG.symbolMarket[displaySymbol] || 'spot'; }
+function restBaseFor(displaySymbol){ return marketFor(displaySymbol)==='futures' ? CFG.futuresRestBase : CFG.spotRestBase; }
+function wsBaseFor(displaySymbol){ return marketFor(displaySymbol)==='futures' ? CFG.futuresWsBase : CFG.spotWsBase; }
+function klinesPathFor(displaySymbol){ return marketFor(displaySymbol)==='futures' ? '/fapi/v1/klines' : '/api/v3/klines'; }
+
+const state = {
+  symbol: 'BTCUSDT',
+  tf: '1m',
+  baseInterval: '1m',      // native binance interval used as aggregation source
+  chartType: 'renko',      // renko-only build — candlestick view removed per request
+  renkoOverlay: false, // now controlled via the "Renko Line" indicator toggle, default off
+  baseCandles: [],         // raw native-interval candles from Binance
+  candles: [],             // aggregated target-timeframe candles (OHLCV)
+  renkoBricks: [],         // Pine-exact renko_level bricks (used for the "Renko Line" overlay)
+  classicRenkoBricks: [],  // real Renko chart bricks (2x-box asymmetric reversal rule)
+  ws: null,
+  wsConnected: false,
+  offsetBars: 0,           // horizontal pan, in bars from right edge
+  userSetRenkoSize: false, // true once the person manually edits the Renko box size — stops auto-calibration from overwriting it
+  lastAtrSymbol: null,     // which symbol the ATR(7)-daily box sizing was last computed for — avoids re-fetching daily candles on every tf change
+  pxPerBar: 8,
+  yZoom: 1, // vertical price-scale zoom, 1 = auto-fit; drag/scroll on the right price scale to adjust
+  crosshair: null, // { x, y } canvas-relative coords while hovering/touching the chart, else null
+  indicators: {
+    emaOn: false,
+    ema: [ { period:9, color:'#f5a623' }, { period:20, color:'#3b82f6' }, { period:50, color:'#a78bfa' }, { period:200, color:'#dc2626' } ],
+    ichimoku: false,
+    superIchi: false,
+    zlema: false,
+    reversalZones: false,
+    breakoutStats: false,
+    supertrend: true
+  },
+  settings: {
+    renkoMode: 'pct', renkoSize: 0.1,                 // Renko CHART (ClassicRenko) box size
+    rlMode: 'pct', rlSize: 0.1,                        // Renko LINE overlay (RenkoEngine) box size — independent of the chart above
+    zlSource: 'hlc3', zlPeriod: 55,                    // period3 default 55
+    siTenkanPeriod: 9, siTenkanMult: 2.0, siKijunPeriod: 26, siKijunMult: 4.0,
+    ichiConv: 9, ichiBase: 26, ichiSpanB: 52, ichiDisplacement: 26,
+    rzPct: 0.015, rzAbs: 0.05, rzAtrMult: 2.8, rzAvgLen: 5, rzAtrLen: 5, // presetPct/presetATR/customAbs/avgLen/atrLen (Low preset)
+    rzLevelExtend: 10,                                 // levelExtend — how many bars the core/outer boxes extend right
+    stPeriod: 10, stMult: 3.0, stSource: 'close',       // classic Supertrend defaults
+    boLookback: 20, boSample: 200
+  }
+};
+
+/* ---------------------------------------------------------------------
+   1. REST — historical data
+   --------------------------------------------------------------------- */
+function pickBaseInterval(targetTf){
+  const targetMs = CFG.tfMs[targetTf];
+  if (CFG.nativeIntervals.includes(targetTf)) return targetTf;
+  // choose the largest native interval that evenly divides target
+  let best = '1s';
+  for (const iv of CFG.nativeIntervals){
+    const ms = CFG.tfMs[iv];
+    if (ms <= targetMs && targetMs % ms === 0) best = iv;
+  }
+  return best;
+}
+
+function apiSymbol(displaySymbol){
+  return displaySymbol.toUpperCase(); // both BTCUSDT and (now-real) XAUUSDT use their literal symbol
+}
+
+async function fetchHistorical(displaySymbol, targetTf){
+  const symbol = apiSymbol(displaySymbol);
+  let baseIv = pickBaseInterval(targetTf);
+  // Binance's futures kline REST endpoint (fapi/v1/klines) doesn't serve sub-minute bars —
+  // only the spot API does. Requesting '1s' there would just fail every single time, so
+  // skip straight to 1m for the historical backfill; connectWS() then builds genuine live
+  // 1s bars itself from the futures aggTrade stream (see connectAggTradeWS below) — same
+  // approach Binance's own futures UI uses to show 1s bars on TradFi perps like XAUUSDT/XAGUSDT.
+  if (marketFor(displaySymbol)==='futures' && CFG.tfMs[targetTf] < 60000) baseIv = '1m';
+  const restBase = restBaseFor(displaySymbol);
+  const klinesPath = klinesPathFor(displaySymbol);
+  // Renko bricks compress time — a handful of hours of 1m data (Binance's 1000-bar-per-call
+  // cap) is nowhere near enough underlying data to fill a chart with bricks the way a real
+  // Renko chart does. Page backwards through several REST calls to build much deeper history.
+  const PAGES = 4;
+
+  const fetchPages = async (interval) => {
+    let all = [];
+    let endTime = null;
+    for (let p=0; p<PAGES; p++){
+      let url = `${restBase}${klinesPath}?symbol=${symbol}&interval=${interval}&limit=${CFG.restLimitCap}`;
+      if (endTime) url += `&endTime=${endTime}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('REST ' + res.status);
+      const raw = await res.json();
+      if (!raw.length) break;
+      const page = raw.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], closed: true }));
+      all = page.concat(all);
+      endTime = page[0].t - 1; // next page ends just before this page's earliest candle
+      if (raw.length < CFG.restLimitCap) break; // hit the start of available history
+    }
+    return all;
+  };
+
+  const fetchWithFallback = async () => {
+    try{
+      const candles = await fetchPages(baseIv);
+      if (candles.length) return { candles, baseInterval: baseIv };
+      if (baseIv === '1m') return { candles, baseInterval: baseIv }; // genuinely nothing to fall back to
+    } catch(e){
+      console.warn(`${baseIv} klines request failed for ${symbol} (${e.message}) — trying 1m`);
+    }
+    // Either the request threw (network/CORS/rate-limit/unsupported-interval error) or came
+    // back empty — either way, a permanently blank chart is worse than silently dropping to
+    // 1m. This now covers BOTH failure modes (previously only the "empty response" case fell
+    // back; a thrown error left baseIv pointing at the unavailable interval with 0 candles).
+    if (baseIv !== '1m'){
+      console.warn(`No usable ${baseIv} klines for ${symbol} — falling back to 1m`);
+      baseIv = '1m';
+      try{
+        const candles = await fetchPages(baseIv);
+        return { candles, baseInterval: baseIv };
+      } catch(e2){
+        console.error('1m fallback also failed', e2);
+        setStatus(false, 'REST error: ' + e2.message);
+        return { candles: [], baseInterval: baseIv };
+      }
+    }
+    return { candles: [], baseInterval: baseIv };
+  };
+
+  return fetchWithFallback();
+}
+
+/* ---------------------------------------------------------------------
+   2. WEBSOCKET MANAGER — subscribes to base-interval kline stream,
+      maintains baseCandles[], re-aggregates target TF on every tick.
+   --------------------------------------------------------------------- */
+let everConnected = false;
+let pendingBar = null;
+let rafScheduled = false;
+
+function scheduleUpdate(){
+  if (rafScheduled) return;
+  rafScheduled = true;
+  requestAnimationFrame(flushUpdate);
+}
+function flushUpdate(){
+  rafScheduled = false;
+  if (pendingBar){
+    rebuildAggregation();
+    RenkoEngine.update(pendingBar);
+    ClassicRenko.update(pendingBar);
+    pendingBar = null;
+  }
+  Indicators.recompute();
+  Render.draw();
+}
+
+async function resyncHistory(){
+  // Re-pull fresh REST history and merge — fills any gap left by a dropped WS connection
+  // instead of silently continuing to append onto a stale/incomplete series.
+  try{
+    const fresh = await fetchHistorical(state.symbol, state.tf);
+    if (!fresh.length) return;
+    const map = new Map();
+    for (const c of state.baseCandles) map.set(c.t, c);
+    for (const c of fresh) map.set(c.t, c); // fresh REST data wins on overlap
+    const merged = Array.from(map.values()).sort((a,b)=>a.t-b.t);
+    state.baseCandles = merged.slice(-5000);
+    rebuildAggregation();
+    RenkoEngine.reset(state.baseCandles);
+    ClassicRenko.reset(state.baseCandles);
+    Indicators.recompute();
+    Render.draw();
+  } catch(e){ console.error('resync failed', e); }
+}
+
+let reconnectTimer = null;
+let reconnectDelay = 1000;
+let wsFailCount = 0;
+let pollTimer = null;
+
+function startPollFallback(){
+  if (pollTimer) return;
+  setStatus(true, `live (polling fallback): ${state.symbol} @ ${state.baseInterval}`);
+  pollTimer = setInterval(async () => {
+    try{
+      const symbol = apiSymbol(state.symbol);
+      const url = `${restBaseFor(state.symbol)}${klinesPathFor(state.symbol)}?symbol=${symbol}&interval=${state.baseInterval}&limit=3`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const raw = await res.json();
+      const fresh = raw.map(k => ({ t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5], closed:true }));
+      const arr = state.baseCandles;
+      for (const bar of fresh){
+        const last = arr[arr.length-1];
+        if (last && last.t === bar.t) arr[arr.length-1] = bar;
+        else if (!last || bar.t > last.t) arr.push(bar);
+      }
+      if (arr.length > 5500) arr.splice(0, arr.length-5000); // batch-trim so we don't pay an O(n) shift on every single tick
+      pendingBar = fresh[fresh.length-1];
+      scheduleUpdate();
+    } catch(e){ /* silent — next tick retries */ }
+  }, 3000);
+}
+function stopPollFallback(){
+  if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+
+function connectWS(){
+  if (marketFor(state.symbol)==='futures' && CFG.tfMs[state.tf] < 60000){
+    connectAggTradeWS();
+    return;
+  }
+  if (state.ws){ try{ state.ws.close(); }catch(e){} state.ws = null; }
+  if (reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+  const sym = apiSymbol(state.symbol).toLowerCase();
+  const stream = `${sym}@kline_${state.baseInterval}`;
+  const url = wsBaseFor(state.symbol) + stream;
+  if (!pollTimer) setStatus(false, 'connecting…');
+  let ws;
+  try { ws = new WebSocket(url); } catch(e){ setStatus(false,'WS init failed'); startPollFallback(); return; }
+  state.ws = ws;
+
+  ws.onopen = () => {
+    stopPollFallback();
+    setStatus(true, `live: ${state.symbol} @ ${state.baseInterval}`);
+    reconnectDelay = 1000; // reset backoff on a clean connect
+    wsFailCount = 0;
+    if (everConnected) resyncHistory(); // reconnect after a drop — backfill any gap
+    everConnected = true;
+  };
+  ws.onclose = (e) => {
+    wsFailCount++;
+    const secs = Math.round(reconnectDelay/1000);
+    // After repeated WS failures (common when a network/ISP blocks the Binance WebSocket
+    // port/domain outright — REST often still gets through), fall back to REST polling
+    // every 3s so the chart keeps updating instead of sitting on "disconnected" forever.
+    if (wsFailCount >= 3){
+      startPollFallback();
+    } else {
+      setStatus(false, `disconnected (code ${e.code||'?'}) — retrying in ${secs}s`);
+    }
+    reconnectTimer = setTimeout(()=>{ if(state.ws===ws) connectWS(); }, reconnectDelay);
+    reconnectDelay = Math.min(15000, Math.round(reconnectDelay*1.6)); // exponential backoff, capped at 15s
+  };
+  ws.onerror = () => { if (!pollTimer) setStatus(false, 'ws error'); };
+  ws.onmessage = (msg) => {
+    let data;
+    try { data = JSON.parse(msg.data); } catch(e){ return; }
+    const k = data.k;
+    if (!k) return;
+    const bar = { t:k.t, o:+k.o, h:+k.h, l:+k.l, c:+k.c, v:+k.v, closed:k.x };
+    const arr = state.baseCandles;
+    const last = arr[arr.length-1];
+    if (last && last.t === bar.t) arr[arr.length-1] = bar;
+    else arr.push(bar);
+    if (arr.length > 5500) arr.splice(0, arr.length-5000); // batch-trim so we don't pay an O(n) shift on every single tick
+
+    // Do NOT recompute/redraw synchronously here — Binance can push several updates
+    // per second (especially on 1s streams), and running the full indicator recompute
+    // on every single message is what was freezing/"crashing" the tab. Instead we just
+    // stash the latest bar and let a single requestAnimationFrame tick pick it up,
+    // capping real work to ~60 times/sec no matter how fast messages arrive.
+    pendingBar = bar;
+    scheduleUpdate();
+  };
+}
+
+// Futures kline endpoints (REST + WS) don't offer sub-minute bars at all — but the raw
+// trade stream (aggTrade) is available at any granularity. For a futures symbol on a
+// "seconds" timeframe (e.g. XAUUSDT/XAGUSDT @ 1s) we build our own 1-second OHLC bars
+// straight from live trades, which is effectively what Binance's own futures UI does to
+// show a 1s chart on these TradFi perps. No historical 1s backfill is possible this way —
+// bricks accumulate live, starting from whenever the chart was opened.
+function connectAggTradeWS(){
+  if (state.ws){ try{ state.ws.close(); }catch(e){} state.ws = null; }
+  if (reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+  const sym = apiSymbol(state.symbol).toLowerCase();
+  const stream = `${sym}@aggTrade`;
+  const url = wsBaseFor(state.symbol) + stream;
+  if (!pollTimer) setStatus(false, 'connecting…');
+  let ws;
+  try { ws = new WebSocket(url); } catch(e){ setStatus(false,'WS init failed'); startPollFallback(); return; }
+  state.ws = ws;
+  const bucketMs = 1000;
+
+  ws.onopen = () => {
+    stopPollFallback();
+    state.baseInterval = '1s'; // first live trade bucket is genuinely 1s-granular from here on
+    setStatus(true, `live: ${state.symbol} @ ${state.tf}`);
+    reconnectDelay = 1000;
+    wsFailCount = 0;
+    everConnected = true;
+  };
+  ws.onclose = (e) => {
+    wsFailCount++;
+    const secs = Math.round(reconnectDelay/1000);
+    if (wsFailCount >= 3){
+      startPollFallback();
+    } else {
+      setStatus(false, `disconnected (code ${e.code||'?'}) — retrying in ${secs}s`);
+    }
+    reconnectTimer = setTimeout(()=>{ if(state.ws===ws) connectAggTradeWS(); }, reconnectDelay);
+    reconnectDelay = Math.min(15000, Math.round(reconnectDelay*1.6));
+  };
+  ws.onerror = () => { if (!pollTimer) setStatus(false, 'ws error'); };
+  ws.onmessage = (msg) => {
+    let data;
+    try { data = JSON.parse(msg.data); } catch(e){ return; }
+    const price = +data.p, qty = +data.q, t = data.T || data.E;
+    if (!isFinite(price) || !t) return;
+    const bucketStart = Math.floor(t / bucketMs) * bucketMs;
+    const arr = state.baseCandles;
+    const last = arr[arr.length-1];
+    if (last && last.t === bucketStart && last.synthetic){
+      last.h = Math.max(last.h, price);
+      last.l = Math.min(last.l, price);
+      last.c = price;
+      last.v += qty;
+      pendingBar = last;
+    } else {
+      if (last && last.synthetic) last.closed = true; // finalize the previous second
+      const bar = { t:bucketStart, o:price, h:price, l:price, c:price, v:qty, closed:false, synthetic:true };
+      arr.push(bar);
+      if (arr.length > 5500) arr.splice(0, arr.length-5000);
+      pendingBar = bar;
+    }
+    scheduleUpdate();
+  };
+}
+
+
+/* ---------------------------------------------------------------------
+   3. TIMEFRAME AGGREGATION — bucket baseCandles into target TF bars
+   --------------------------------------------------------------------- */
+function rebuildAggregation(){
+  const targetMs = CFG.tfMs[state.tf];
+  if (state.baseInterval === state.tf){
+    state.candles = state.baseCandles.slice();
+    return;
+  }
+  const out = [];
+  let bucket = null, bucketStart = null;
+  for (const c of state.baseCandles){
+    const bStart = Math.floor(c.t / targetMs) * targetMs;
+    if (bucketStart === null || bStart !== bucketStart){
+      if (bucket) out.push(bucket);
+      bucketStart = bStart;
+      bucket = { t:bStart, o:c.o, h:c.h, l:c.l, c:c.c, v:c.v, closed:c.closed };
+    } else {
+      bucket.h = Math.max(bucket.h, c.h);
+      bucket.l = Math.min(bucket.l, c.l);
+      bucket.c = c.c;
+      bucket.v += c.v;
+      bucket.closed = c.closed;
+    }
+  }
+  if (bucket) out.push(bucket);
+  state.candles = out;
+}
+
+/* ---------------------------------------------------------------------
+   4. RENKO ENGINE — standalone bricks (percentage or fixed box size)
+      driven off each incoming base-candle close (tick-equivalent).
+   --------------------------------------------------------------------- */
+const RenkoEngine = {
+  bricks: [],
+  lastClose: null,
+  reset(seedCandles){
+    this.bricks = [];
+    this.lastClose = null;
+    for (const c of seedCandles) this.ingest(c.c, c.t);
+    state.renkoBricks = this.bricks;
+  },
+  boxSizeAt(price){
+    return state.settings.rlMode === 'pct'
+      ? price * (state.settings.rlSize/100)
+      : state.settings.rlSize;
+  },
+  // Exact port of the Pine renko_level block: brick_size is recomputed from the CURRENT
+  // close every bar (not from the tracked level), and the level jumps by whole multiples
+  // of that single brick_size in one shot. Used for the "Renko Line" overlay on candles.
+  ingest(price, t){
+    if (this.lastClose === null){
+      this.lastClose = price;
+      this.bricks.push({ t, o:price, c:price, dir:0, open:price, close:price });
+      return;
+    }
+    let box = this.boxSizeAt(price);
+    if (box <= 0) box = Math.max(price*0.0001, 1e-6);
+    const diff = price - this.lastClose;
+    if (diff > box){
+      const steps = Math.floor(diff / box);
+      for (let i=0;i<steps;i++){
+        const openP = this.lastClose, closeP = this.lastClose + box;
+        this.bricks.push({ t, o:openP, c:closeP, dir:1, open:openP, close:closeP });
+        this.lastClose = closeP;
+      }
+    } else if (diff < -box){
+      const steps = Math.floor(-diff / box);
+      for (let i=0;i<steps;i++){
+        const openP = this.lastClose, closeP = this.lastClose - box;
+        this.bricks.push({ t, o:openP, c:closeP, dir:-1, open:openP, close:closeP });
+        this.lastClose = closeP;
+      }
+    }
+    if (this.bricks.length > 2500) this.bricks.splice(0, this.bricks.length-2000); // batch-trim, same reasoning
+  },
+  update(bar){
+    this.ingest(bar.c, bar.t);
+    state.renkoBricks = this.bricks;
+  }
+};
+
+// Classic Renko brick chart: continuation needs price to move by ONE box size, but a
+// REVERSAL needs price to move by TWO box sizes in the opposite direction before the
+// first brick in the new direction is allowed to form. That asymmetry is exactly what
+// gives real Renko charts their staircase look — a same-direction run stacks bricks
+// directly on top of each other, while a reversal always starts one level set back.
+const ClassicRenko = {
+  bricks: [],
+  lastClose: null,
+  dir: 0, // 0 = no direction yet, 1 = up, -1 = down
+  reset(seedCandles){
+    this.bricks = [];
+    this.lastClose = null;
+    this.dir = 0;
+    for (const c of seedCandles) this.ingest(c.c, c.t);
+    state.classicRenkoBricks = this.bricks;
+  },
+  boxSizeAt(price){
+    return state.settings.renkoMode === 'pct'
+      ? price * (state.settings.renkoSize/100)
+      : state.settings.renkoSize;
+  },
+  ingest(price, t){
+    if (this.lastClose === null){
+      this.lastClose = price;
+      this.bricks.push({ t, o:price, c:price, dir:0 });
+      return;
+    }
+    let box = this.boxSizeAt(price);
+    if (box <= 0) box = Math.max(price*0.0001, 1e-6);
+    let guard = 0;
+    while (guard++ < 500){
+      if (this.dir >= 0){
+        if (price - this.lastClose >= box){
+          const o=this.lastClose, c=this.lastClose+box;
+          this.bricks.push({ t, o, c, dir:1 });
+          this.lastClose = c; this.dir = 1; continue;
+        }
+        if (this.dir===1 && (this.lastClose - price) >= 2*box){
+          const o=this.lastClose, c=this.lastClose-box;
+          this.bricks.push({ t, o, c, dir:-1 });
+          this.lastClose = c; this.dir = -1; continue;
+        }
+        if (this.dir===0 && (this.lastClose - price) >= box){
+          const o=this.lastClose, c=this.lastClose-box;
+          this.bricks.push({ t, o, c, dir:-1 });
+          this.lastClose = c; this.dir = -1; continue;
+        }
+      } else {
+        if (this.lastClose - price >= box){
+          const o=this.lastClose, c=this.lastClose-box;
+          this.bricks.push({ t, o, c, dir:-1 });
+          this.lastClose = c; this.dir = -1; continue;
+        }
+        if (price - this.lastClose >= 2*box){
+          const o=this.lastClose, c=this.lastClose+box;
+          this.bricks.push({ t, o, c, dir:1 });
+          this.lastClose = c; this.dir = 1; continue;
+        }
+      }
+      break;
+    }
+    if (this.bricks.length > 2500) this.bricks.splice(0, this.bricks.length-2000);
+  },
+  update(bar){
+    this.ingest(bar.c, bar.t);
+    state.classicRenkoBricks = this.bricks;
+  }
+};
+
+/* ---------------------------------------------------------------------
+   5. INDICATOR MATH
+   --------------------------------------------------------------------- */
+function trueRange(prevClose, h, l){
+  if (prevClose == null) return h - l;
+  return Math.max(h-l, Math.abs(h-prevClose), Math.abs(l-prevClose));
+}
+function atrSeries(candles, period){
+  const out = new Array(candles.length).fill(null);
+  let prevAtr = null, prevClose = null;
+  for (let i=0;i<candles.length;i++){
+    const c = candles[i];
+    const tr = trueRange(prevClose, c.h, c.l);
+    if (prevAtr == null) prevAtr = tr;
+    else prevAtr = (prevAtr*(period-1) + tr) / period; // Wilder smoothing
+    out[i] = prevAtr;
+    prevClose = c.c;
+  }
+  return out;
+}
+function emaSeries(values, period){
+  const out = new Array(values.length).fill(null);
+  const alpha = 2/(period+1);
+  let prev = null;
+  for (let i=0;i<values.length;i++){
+    if (values[i] == null){ out[i]=prev; continue; }
+    prev = prev == null ? values[i] : (values[i]*alpha + prev*(1-alpha));
+    out[i] = prev;
+  }
+  return out;
+}
+function highestArr(vals, i, period){
+  let m = -Infinity; for (let k=Math.max(0,i-period+1); k<=i; k++) m = Math.max(m, vals[k]);
+  return m;
+}
+function lowestArr(vals, i, period){
+  let m = Infinity; for (let k=Math.max(0,i-period+1); k<=i; k++) m = Math.min(m, vals[k]);
+  return m;
+}
+
+const Indicators = {
+  ema: {},        // period -> array
+  kalmanZlema: { kv1:[], kv2:[], kv3:[], zlema:[], color:[] },
+  ichimoku: { conv:[], base:[], spanA:[], spanB:[] },
+  superIchi: { tenkan:[], kijun:[], signal:[] }, // signal: 1 buy, -1 sell, 0 none
+  supertrend: { line:[], dir:[] },
+  supertrendRenko: { line:[], dir:[] },
+  reversalZones: { events:[], status:'idle', lastType:null, lastPrice:null, lastBar:null },
+  breakout: { table:[], highPct:0, lowPct:0 },
+  atr: [],
+
+  recompute(){
+    const c = state.candles;
+    if (!c.length) return;
+    const ind = state.indicators;
+    // Only compute what's actually toggled on — this was the real reason 1s crashed even
+    // after the O(n^2) fix: every indicator (Ichimoku, SuperIchi, Kalman/ZLEMA, Reversal
+    // Zones, Breakout Stats) was being recomputed on every tick regardless of whether it
+    // was even visible. With everything off except Supertrend, this now does almost nothing.
+    if (ind.emaOn) this.computeEMA(c);
+    if (ind.zlema) this.computeKalmanZlema(c);
+    if (ind.ichimoku) this.computeIchimoku(c);
+    if (ind.superIchi) this.computeSuperIchi(c);
+    if (ind.supertrend){
+      this.atr = atrSeries(c, 14);
+      this.computeSupertrend(c);
+      this.computeSupertrendOnRenkoBricks(state.classicRenkoBricks);
+    }
+    if (ind.reversalZones) this.computeReversalZones(c);
+    if (ind.breakoutStats) this.computeBreakoutStats(c);
+  },
+
+  computeEMA(c){
+    this.ema = {};
+    const closes = c.map(b=>b.c);
+    for (const line of state.indicators.ema){
+      this.ema[line.period] = emaSeries(closes, line.period);
+    }
+  },
+
+  // ---- Kalman filter + ZLEMA slow line (exact port from Ankit V4 Pine v6) ----
+  computeKalmanZlema(c){
+    const src = c.map(b => srcValue(b, state.settings.zlSource));
+    const n = c.length;
+    const kv1 = new Array(n).fill(0), kv2 = new Array(n).fill(0), kv3 = new Array(n).fill(0);
+    let prevClose = null;
+    for (let i=0;i<n;i++){
+      const tr = trueRange(prevClose, c[i].h, c[i].l);
+      const prevSrc = i>0 ? src[i-1] : src[i];
+      kv1[i] = 0.2*(src[i]-prevSrc) + 0.8*(i>0?kv1[i-1]:0);
+      kv2[i] = 0.1*tr + 0.8*(i>0?kv2[i-1]:1.0); // var float kv2 = 1.0 in the Pine source
+      const klam = Math.abs(kv1[i] / Math.max(kv2[i], 1e-10));
+      const klam2 = klam*klam;
+      const kalpha = (-klam2 + Math.sqrt(klam2*klam2 + 16*klam2)) / 8;
+      const ka = isFinite(kalpha) ? Math.min(Math.max(kalpha,0),1) : 0;
+      kv3[i] = ka*src[i] + (1-ka)*(i>0?kv3[i-1]:0); // var float kv3 = 0.0
+      prevClose = c[i].c;
+    }
+    // ma3_raw = ta.ema(src + (src - src[lag3]), period3), where src here is kv3 (use_kalman=true default)
+    const period = state.settings.zlPeriod; // period3, default 55
+    const lag = Math.round((period-1)/2);
+    const zlData = new Array(n).fill(null);
+    for (let i=0;i<n;i++){
+      const lagged = i-lag>=0 ? kv3[i-lag] : kv3[0];
+      zlData[i] = kv3[i] + (kv3[i]-lagged);
+    }
+    const zlema = emaSeries(zlData, period);
+    const color = zlema.map((v,i)=> (v!=null && c[i].c > v) ? 'bull' : 'bear'); // zlema_bull = close > ma3
+    this.kalmanZlema = { kv1, kv2, kv3, zlema, color };
+  },
+
+  // ---- Ichimoku Kumo (classic — Donchian-based, exact port) ----
+  computeIchimoku(c){
+    const n = c.length;
+    const highs = c.map(b=>b.h), lows = c.map(b=>b.l);
+    const conv = new Array(n).fill(null), base = new Array(n).fill(null);
+    const spanA = new Array(n).fill(null), spanB = new Array(n).fill(null);
+    const P = state.settings.ichiConv, B = state.settings.ichiBase, S = state.settings.ichiSpanB;
+    for (let i=0;i<n;i++){
+      conv[i] = (highestArr(highs,i,P) + lowestArr(lows,i,P)) / 2;
+      base[i] = (highestArr(highs,i,B) + lowestArr(lows,i,B)) / 2;
+      spanA[i] = (conv[i]+base[i])/2;
+      spanB[i] = (highestArr(highs,i,S) + lowestArr(lows,i,S)) / 2;
+    }
+    // Pine offset=ichi_displacement-1 (offset is 0-based bar shift), default displacement=26 -> offset 25
+    this.ichimoku = { conv, base, spanA, spanB, displacement: (state.settings.ichiDisplacement||26) - 1 };
+  },
+
+  // ---- SuperIchi: exact port of the "Ankit" script's Tenkan/Kijun trailing-stop engine.
+  // Each line is an ATR band around hl2 (like a SuperTrend), and Tenkan/Kijun is the
+  // average of the running max/min of price since the last flip of that trailing stop.
+  superichiLine(c, len, mult){
+    const n = c.length;
+    const atrX = atrSeries(c, len).map(v => v*mult);
+    const upper = new Array(n).fill(0), lower = new Array(n).fill(0);
+    const os = new Array(n).fill(0);
+    const mx = new Array(n).fill(0), mn = new Array(n).fill(0);
+    const line = new Array(n).fill(null);
+    for (let i=0;i<n;i++){
+      const hl2 = (c[i].h + c[i].l) / 2;
+      const prevClose = i>0 ? c[i-1].c : null;
+      const prevUpper = i>0 ? upper[i-1] : 0, prevLower = i>0 ? lower[i-1] : 0;
+      upper[i] = (prevClose!=null && prevClose < prevUpper) ? Math.min(hl2+atrX[i], prevUpper) : hl2+atrX[i];
+      lower[i] = (prevClose!=null && prevClose > prevLower) ? Math.max(hl2-atrX[i], prevLower) : hl2-atrX[i];
+      const prevOs = i>0 ? os[i-1] : 0;
+      os[i] = c[i].c > upper[i] ? 1 : c[i].c < lower[i] ? 0 : prevOs;
+      const spt = os[i]===1 ? lower[i] : upper[i];
+      const prevSpt = i>0 ? (os[i-1]===1 ? lower[i-1] : upper[i-1]) : spt;
+      const crossed = i>0 && ((c[i-1].c - prevSpt) * (c[i].c - spt) < 0);
+      const prevMx = i>0 ? mx[i-1] : 0, prevMn = i>0 ? mn[i-1] : 0;
+      mx[i] = crossed ? Math.max(c[i].c, prevMx) : (os[i]===1 ? Math.max(c[i].c, prevMx) : spt);
+      mn[i] = crossed ? Math.min(c[i].c, prevMn) : (os[i]===0 ? Math.min(c[i].c, prevMn) : spt);
+      line[i] = (mx[i]+mn[i]) / 2;
+    }
+    return line;
+  },
+  computeSuperIchi(c){
+    const tenkan = this.superichiLine(c, state.settings.siTenkanPeriod, state.settings.siTenkanMult);
+    const kijun  = this.superichiLine(c, state.settings.siKijunPeriod,  state.settings.siKijunMult);
+    const n = c.length;
+    const signal = new Array(n).fill(0); // crossover(tenkan,kijun) -> buy, crossunder -> sell
+    for (let i=1;i<n;i++){
+      if (tenkan[i-1]<=kijun[i-1] && tenkan[i]>kijun[i]) signal[i] = 1;
+      else if (tenkan[i-1]>=kijun[i-1] && tenkan[i]<kijun[i]) signal[i] = -1;
+    }
+    this.superIchi = { tenkan, kijun, signal };
+  },
+
+  // ---- Classic Supertrend (ATR bands + trailing flip) ----
+  // Generic Supertrend core — works on any bar-like array with .h/.l/.c (candles) or
+  // synthetic h/l/c (Renko bricks), so each chart type gets a native, non-distorted line.
+  // `source` picks the price used as the band basis: 'hl2' (classic) or 'close'.
+  supertrendCore(bars, period, mult, source){
+    const n = bars.length;
+    const atr = atrSeries(bars, period);
+    const line = new Array(n).fill(null), dir = new Array(n).fill(1);
+    let upperBand = null, lowerBand = null;
+    for (let i=0;i<n;i++){
+      const basis = source==='close' ? bars[i].c : (bars[i].h+bars[i].l)/2;
+      const basicUpper = basis + mult*atr[i];
+      const basicLower = basis - mult*atr[i];
+      if (i===0){
+        upperBand = basicUpper; lowerBand = basicLower; dir[i]=1; line[i]=lowerBand;
+        continue;
+      }
+      const prevClose = bars[i-1].c;
+      upperBand = (basicUpper < upperBand || prevClose > upperBand) ? basicUpper : upperBand;
+      lowerBand = (basicLower > lowerBand || prevClose < lowerBand) ? basicLower : lowerBand;
+      const prevDir = dir[i-1];
+      let d = prevDir;
+      if (prevDir===1 && bars[i].c < lowerBand) d = -1;
+      else if (prevDir===-1 && bars[i].c > upperBand) d = 1;
+      dir[i] = d;
+      line[i] = d===1 ? lowerBand : upperBand;
+    }
+    return { line, dir };
+  },
+  computeSupertrend(c){
+    this.supertrend = this.supertrendCore(c, state.settings.stPeriod, state.settings.stMult, state.settings.stSource);
+  },
+  // Computed directly on the Renko brick sequence (synthetic h=max(o,c), l=min(o,c)) so the
+  // trailing bands move brick-to-brick instead of being distorted by mapping a time-based
+  // line onto the price-based brick x-axis (that mapping caused the odd diagonal jumps).
+  computeSupertrendOnRenkoBricks(bricks){
+    if (!bricks.length){ this.supertrendRenko = { line:[], dir:[] }; return; }
+    const synth = bricks.map(b => ({ h: Math.max(b.o,b.c), l: Math.min(b.o,b.c), c: b.c }));
+    this.supertrendRenko = this.supertrendCore(synth, state.settings.stPeriod, state.settings.stMult, state.settings.stSource);
+  },
+
+  // ---- Reversal Entry Zones engine — exact port of the confirmed-pivot algorithm.
+  // Tracks EMA-smoothed high/low streams (avgLen=5 default), confirms a pivot once price
+  // has moved away from the running extreme by the ATR/percentage threshold, then anchors
+  // a core box + wider outer box at the RAW high/low of that pivot bar.
+  computeReversalZones(c){
+    const n = c.length;
+    if (!n){ this.reversalZones = { events:[], status:'idle', lastType:null, lastPrice:null, lastBar:null }; return; }
+    const avgLen = state.settings.rzAvgLen, atrLen = state.settings.rzAtrLen;
+    const hiBase = emaSeries(c.map(b=>b.h), avgLen);
+    const loBase = emaSeries(c.map(b=>b.l), avgLen);
+    const atrNow = atrSeries(c, atrLen);
+    const presetPct = state.settings.rzPct, presetATR = state.settings.rzAtrMult, customAbs = state.settings.rzAbs;
+
+    const events = [];
+    let runHigh = hiBase[0], runLow = loBase[0];
+    let runHighRaw = c[0].h, runLowRaw = c[0].l;
+    let runHighBar = 0, runLowBar = 0;
+    let swingDir = 1; // 1 = tracking a high (looking for a bearish reversal down), -1 = tracking a low
+
+    for (let i=1;i<n;i++){
+      const hiRef = hiBase[i], loRef = loBase[i];
+      const threshold = Math.max(c[i].c*presetPct/100, Math.max(customAbs, presetATR*(atrNow[i]||0)));
+
+      if (swingDir===1){
+        if (hiRef > runHigh){ runHigh=hiRef; runHighRaw=c[i].h; runHighBar=i; }
+        if (runHigh - loRef >= threshold){
+          events.push({ bar:i, t:c[i].t, type:'BEARISH REVERSAL', pivotBar:runHighBar, pivotPrice:runHighRaw, pivotT:c[runHighBar].t, price:runHighRaw, atr:atrNow[i]||0 });
+          swingDir = -1; runLow=loRef; runLowRaw=c[i].l; runLowBar=i;
+        }
+      } else {
+        if (loRef < runLow){ runLow=loRef; runLowRaw=c[i].l; runLowBar=i; }
+        if (hiRef - runLow >= threshold){
+          events.push({ bar:i, t:c[i].t, type:'BULLISH REVERSAL', pivotBar:runLowBar, pivotPrice:runLowRaw, pivotT:c[runLowBar].t, price:runLowRaw, atr:atrNow[i]||0 });
+          swingDir = 1; runHigh=hiRef; runHighRaw=c[i].h; runHighBar=i;
+        }
+      }
+    }
+    const last = events[events.length-1];
+    this.reversalZones = {
+      events,
+      status: last ? 'tracking' : 'idle',
+      lastType: last ? last.type : null,
+      lastPrice: last ? last.price : null,
+      lastBar: last ? (n-1-last.bar) : null
+    };
+  },
+
+  // ---- Breakout Probability Statistics engine ----
+  computeBreakoutStats(c){
+    const N = state.settings.boLookback;
+    const sample = Math.min(state.settings.boSample, c.length-N-1);
+    if (sample <= 1){ this.breakout = { table:[], highPct:0, lowPct:0 }; return; }
+    let highBreaks=0, lowBreaks=0, total=0;
+    const levels = [0.25,0.5,1.0,1.5,2.0]; // ATR multiples tested as breakout levels
+    const levelStats = levels.map(l => ({ level:l, hit:0, total:0 }));
+    const start = c.length - sample;
+    const highs = c.map(b=>b.h), lows = c.map(b=>b.l); // computed once — was previously re-mapped every i (O(n^2))
+    const atrArr = atrSeries(c, 14); // independent of Indicators.atr, which is only populated when Supertrend is on
+    for (let i=start; i<c.length-1; i++){
+      if (i-N < 0) continue;
+      const priorHigh = highestArr(highs, i-1, N);
+      const priorLow  = lowestArr(lows, i-1, N);
+      const atr = atrArr[i] || 0;
+      total++;
+      if (c[i].c > priorHigh) highBreaks++;
+      if (c[i].c < priorLow) lowBreaks++;
+      for (const ls of levelStats){
+        const target = c[i].c + ls.level*atr;
+        ls.total++;
+        // did price reach the target within next N bars?
+        for (let j=i+1; j<Math.min(c.length, i+1+N); j++){
+          if (c[j].h >= target){ ls.hit++; break; }
+        }
+      }
+    }
+    this.breakout = {
+      table: levelStats.map(ls => ({ level: ls.level, pct: ls.total? (ls.hit/ls.total*100):0, w: ls.hit, l: ls.total-ls.hit })),
+      highPct: total? (highBreaks/total*100):0,
+      lowPct: total? (lowBreaks/total*100):0
+    };
+  }
+};
+
+function srcValue(bar, mode){
+  if (mode==='close') return bar.c;
+  return (bar.h+bar.l+bar.c)/3; // hlc3
+}
+
+/* ---------------------------------------------------------------------
+   6. RENDERER — Canvas2D. Draws candlestick or renko main series,
+      right-side price scale, overlays (EMA/Ichimoku/SuperIchi/ZLEMA/
+      Reversal boxes/Renko overlay line), basic pan+zoom.
+   --------------------------------------------------------------------- */
+const Render = {
+  canvas: null, ctx: null, dpr: 1,
+  padRight: 58, padTop: 10, padBottom: 22,
+
+  init(){
+    this.canvas = document.getElementById('chartCanvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.lineJoin = 'round';
+    this.ctx.lineCap = 'round';
+    this.resize();
+    window.addEventListener('resize', ()=>{ this.resize(); this.draw(); });
+    this.bindInteractions();
+  },
+  // Fit the whole loaded history into view (called once after a fresh load) instead of
+  // defaulting to a fixed zoom that only shows the most recent ~50 bars.
+  fitToView(){
+    const series = state.chartType==='renko' ? state.classicRenkoBricks : state.candles;
+    if (!series.length) return;
+    const available = Math.max(50, this.w - this.padRight);
+    state.pxPerBar = Math.min(20, Math.max(1, available / series.length));
+    state.offsetBars = 0;
+  },
+  resize(){
+    const wrap = document.getElementById('chartWrap');
+    this.dpr = window.devicePixelRatio || 1;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    this.canvas.width = w*this.dpr; this.canvas.height = h*this.dpr;
+    this.canvas.style.width = w+'px'; this.canvas.style.height = h+'px';
+    this.ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+    this.w = w; this.h = h;
+  },
+
+  bindInteractions(){
+    const cv = this.canvas;
+    let dragging=false, lastX=0;
+    let draggingScale=false, lastY=0;
+    const onPriceScale = (clientX) => {
+      const rect = cv.getBoundingClientRect();
+      return (clientX-rect.left) > (this.w-this.padRight);
+    };
+    const hideCrosshair = ()=>{
+      const info = document.getElementById('crosshairInfo');
+      if (info) info.style.display='none';
+      if (state.crosshair){ state.crosshair=null; this.draw(); }
+    };
+    cv.addEventListener('mousedown', e=>{
+      if (onPriceScale(e.clientX)){ draggingScale=true; lastY=e.clientY; }
+      else { dragging=true; lastX=e.clientX; hideCrosshair(); }
+    });
+    window.addEventListener('mouseup', ()=> { dragging=false; draggingScale=false; });
+    window.addEventListener('mousemove', e=>{
+      if (dragging){
+        const dx = e.clientX-lastX; lastX=e.clientX;
+        state.offsetBars -= dx/state.pxPerBar;
+        state.offsetBars = Math.max(-40, state.offsetBars); // allow panning latest bar away from the right edge
+        this.draw();
+        return; // panning with the mouse held down shouldn't also drag the crosshair
+      } else if (draggingScale){
+        const dy = e.clientY-lastY; lastY=e.clientY;
+        state.yZoom = Math.min(8, Math.max(0.15, state.yZoom * Math.exp(-dy*0.006)));
+        this.draw();
+        return;
+      }
+      this.updateCrosshair(e.clientX, e.clientY);
+    });
+    cv.addEventListener('dblclick', e=>{
+      if (onPriceScale(e.clientX)){ state.yZoom = 1; this.fitToView(); this.draw(); }
+    });
+    cv.addEventListener('wheel', e=>{
+      e.preventDefault();
+      if (onPriceScale(e.clientX)){
+        const factor = e.deltaY>0 ? 0.92 : 1.08;
+        state.yZoom = Math.min(8, Math.max(0.15, state.yZoom*factor));
+      } else {
+        const factor = e.deltaY>0 ? 0.9 : 1.1;
+        state.pxPerBar = Math.min(100, Math.max(0.5, state.pxPerBar*factor));
+      }
+      this.draw();
+    }, { passive:false });
+    // Touch: a quick single-finger drag pans the chart (as before). A finger held in
+    // place briefly (long-press) instead switches into crosshair mode, so dragging to
+    // read the crosshair no longer also pans/scrolls the chart underneath it.
+    const LONG_PRESS_MS = 220, MOVE_THRESHOLD = 8;
+    let touchStartX=0, touchStartY=0, pinchStart=0, touchOnScale=false, lastTapTime=0;
+    let touchMode=null; // null(undecided) | 'pan' | 'scale' | 'crosshair' | 'pinch'
+    let panLastX=0, scaleLastY=0, longPressTimer=null;
+    cv.addEventListener('touchstart', e=>{
+      clearTimeout(longPressTimer);
+      if (e.touches.length===1){
+        touchStartX = panLastX = e.touches[0].clientX;
+        touchStartY = scaleLastY = e.touches[0].clientY;
+        touchOnScale = onPriceScale(touchStartX);
+        const now = Date.now();
+        if (touchOnScale){
+          touchMode = 'scale';
+          if (now-lastTapTime<300){ state.yZoom = 1; this.fitToView(); this.draw(); }
+        } else {
+          touchMode = null; // wait to see if this becomes a pan or a long-press crosshair
+          longPressTimer = setTimeout(()=>{
+            if (touchMode===null){
+              touchMode = 'crosshair';
+              this.updateCrosshair(touchStartX, touchStartY);
+            }
+          }, LONG_PRESS_MS);
+        }
+        lastTapTime = now;
+      } else if (e.touches.length===2){
+        touchMode = 'pinch';
+        clearTimeout(longPressTimer);
+        pinchStart = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      }
+    }, { passive:true });
+    cv.addEventListener('touchmove', e=>{
+      if (e.touches.length===1){
+        const t = e.touches[0];
+        if (touchMode==='scale'){
+          const dy = t.clientY-scaleLastY; scaleLastY=t.clientY;
+          state.yZoom = Math.min(8, Math.max(0.15, state.yZoom * Math.exp(-dy*0.006)));
+          this.draw();
+        } else if (touchMode==='crosshair'){
+          this.updateCrosshair(t.clientX, t.clientY);
+        } else {
+          // still undecided: only commit to panning once the finger has actually moved
+          const moved = Math.hypot(t.clientX-touchStartX, t.clientY-touchStartY);
+          if (touchMode===null){
+            if (moved < MOVE_THRESHOLD) return;
+            clearTimeout(longPressTimer);
+            touchMode = 'pan';
+            panLastX = t.clientX;
+          }
+          if (touchMode==='pan'){
+            const dx = t.clientX-panLastX; panLastX=t.clientX;
+            state.offsetBars -= dx/state.pxPerBar;
+            state.offsetBars = Math.max(-40, state.offsetBars); // allow panning latest bar away from the right edge
+            this.draw();
+          }
+        }
+      } else if (e.touches.length===2){
+        const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+        if (pinchStart){ const factor = d/pinchStart; state.pxPerBar = Math.min(100, Math.max(0.5, state.pxPerBar*factor)); pinchStart=d; this.draw(); }
+      }
+    }, { passive:true });
+    const endTouch = ()=>{
+      clearTimeout(longPressTimer);
+      if (touchMode==='crosshair') hideCrosshair();
+      touchMode = null;
+    };
+    cv.addEventListener('touchend', endTouch, { passive:true });
+    cv.addEventListener('touchcancel', endTouch, { passive:true });
+  },
+
+  updateCrosshair(clientX, clientY){
+    const rect = this.canvas.getBoundingClientRect();
+    const x = clientX-rect.left, y = clientY-rect.top;
+    const info = document.getElementById('crosshairInfo');
+    const series = state.chartType==='renko' ? state.classicRenkoBricks : state.candles;
+    if (!series.length || x> this.w-this.padRight || x<0 || y<0 || y>this.h-this.padBottom){
+      info.style.display='none';
+      if (state.crosshair){ state.crosshair=null; this.draw(); }
+      return;
+    }
+    const idx = this.xToIndex(x, series.length);
+    const bar = series[idx];
+    if (!bar){ info.style.display='none'; state.crosshair=null; return; }
+    info.style.display='block';
+    if (state.chartType==='renko'){
+      info.innerHTML = `<b>Renko Brick</b><br>O: ${fmt(bar.o)} C: ${fmt(bar.c)}<br>${bar.dir>0?'<span class="up">UP</span>':'<span class="dn">DOWN</span>'}`;
+    } else {
+      const chg = bar.c-bar.o, cls = chg>=0?'up':'dn';
+      info.innerHTML = `<b>${state.symbol} · ${state.tf}</b><br>O ${fmt(bar.o)} H ${fmt(bar.h)} L ${fmt(bar.l)} C <span class="${cls}">${fmt(bar.c)}</span><br>${new Date(bar.t).toLocaleString()}`;
+    }
+    state.crosshair = { x, y, idx };
+    this.draw();
+  },
+
+  xToIndex(x, len){
+    // Mirrors the right-anchored xToPx below: rightIndex sits at the right edge of the
+    // plot area, so invert from there instead of assuming index 0 sits at x=0.
+    // Uses lastPxPerBar (cached at the end of draw()) rather than state.pxPerBar directly,
+    // since Renko uses its own locally-computed spacing that's never written into state.
+    const rightIndex = len-1-state.offsetBars;
+    const rightEdge = this.w-this.padRight;
+    const idx = Math.round(rightIndex - (rightEdge-x)/(this.lastPxPerBar||state.pxPerBar));
+    return Math.min(len-1, Math.max(0, idx));
+  },
+
+  draw(){
+    const ctx = this.ctx;
+    ctx.clearRect(0,0,this.w,this.h);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,this.w,this.h);
+
+    const series = state.chartType==='renko' ? state.classicRenkoBricks : state.candles;
+    if (!series.length) return;
+
+    // Renko now shares the same zoom/pan state as candles (state.pxPerBar), so pinch/wheel
+    // zoom works on it exactly like the candlestick chart instead of being locked to a
+    // fixed "square brick" estimate that only ever showed ~25 bricks on screen.
+    let renderPxPerBar = state.pxPerBar;
+
+    const barsVisible = Math.max(5, Math.floor((this.w-this.padRight)/renderPxPerBar));
+    const rightIndex = series.length-1-state.offsetBars;
+    const startIdx = Math.max(0, Math.floor(rightIndex-barsVisible));
+    const endIdx = Math.min(series.length-1, Math.ceil(rightIndex));
+    const visible = series.slice(startIdx, endIdx+1);
+    if (!visible.length) return;
+
+    let min=Infinity, max=-Infinity;
+    for (const b of visible){
+      const hi = state.chartType==='renko' ? Math.max(b.o,b.c) : b.h;
+      const lo = state.chartType==='renko' ? Math.min(b.o,b.c) : b.l;
+      min = Math.min(min, lo); max = Math.max(max, hi);
+    }
+    const pad = (max-min)*0.08 || max*0.01 || 1;
+    min -= pad; max += pad;
+    const midPrice = (min+max)/2, halfRange = (max-min)/2 / state.yZoom;
+    min = midPrice-halfRange; max = midPrice+halfRange;
+    const yToPx = (price) => this.padTop + (max-price)/(max-min) * (this.h-this.padTop-this.padBottom);
+
+    // Right-anchored: the most recent bar/brick sits at the right edge of the plot area,
+    // with any leftover space pushed to the LEFT (not the other way around).
+    const rightEdge = this.w-this.padRight;
+    const xToPx = (i) => rightEdge - (rightIndex-i)*renderPxPerBar;
+
+    this.drawGrid(ctx, min, max, yToPx);
+
+    if (state.chartType==='renko'){
+      // background fills first, bricks drawn on top so they stay legible
+      if (state.indicators.superIchi) Overlays.drawSuperIchiBgOnRenko(ctx, visible, startIdx, endIdx, xToPx, yToPx);
+      this.drawRenko(ctx, visible, startIdx, xToPx, yToPx, renderPxPerBar);
+      if (state.renkoOverlay) this.drawPriceLineOnRenko(ctx, visible, startIdx, xToPx, yToPx);
+      if (state.indicators.emaOn) Overlays.drawEMAOnRenko(ctx, visible, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.superIchi) Overlays.drawSuperIchiFgOnRenko(ctx, visible, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.supertrend) Overlays.drawSupertrendOnRenko(ctx, visible, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.zlema) Overlays.drawZlemaOnRenko(ctx, visible, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.reversalZones) Overlays.drawReversalZonesOnRenko(ctx, startIdx, endIdx, xToPx, yToPx);
+    } else {
+      // background cloud/band fills drawn BEHIND the candles so wicks/bodies stay visible
+      if (state.indicators.ichimoku) Overlays.drawIchimokuBg(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.superIchi) Overlays.drawSuperIchiBg(ctx, startIdx, endIdx, xToPx, yToPx);
+      this.drawCandles(ctx, visible, startIdx, xToPx, yToPx, renderPxPerBar);
+      if (state.renkoOverlay) this.drawRenkoOverlay(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.emaOn) Overlays.drawEMA(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.superIchi) Overlays.drawSuperIchiFg(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.supertrend) Overlays.drawSupertrend(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.zlema) Overlays.drawZlema(ctx, startIdx, endIdx, xToPx, yToPx);
+      if (state.indicators.reversalZones) Overlays.drawReversalZones(ctx, startIdx, endIdx, xToPx, yToPx);
+    }
+
+    // price scale (right side)
+    const lastPrice = state.chartType==='renko'
+      ? visible[visible.length-1].c
+      : visible[visible.length-1].c;
+    this.drawPriceScale(ctx, min, max, yToPx, lastPrice);
+    this.drawTimeAxis(ctx, series, startIdx, endIdx, xToPx);
+    this.updatePriceLabel(lastPrice, yToPx);
+    if (state.indicators.breakoutStats && state.chartType!=='renko'){
+      Overlays.drawBreakoutBadges(ctx, this.w-this.padRight, yToPx(lastPrice));
+    }
+    this.lastPxPerBar = renderPxPerBar;
+    if (state.crosshair){
+      this.drawCrosshair(ctx, state.crosshair, series, startIdx, endIdx, xToPx, yToPx, min, max, rightIndex);
+    }
+    Dashboards.update();
+  },
+
+  drawCrosshair(ctx, ch, series, startIdx, endIdx, xToPx, yToPx, min, max, rightIndex){
+    const idx = Math.min(endIdx, Math.max(startIdx, ch.idx));
+    const vx = xToPx(idx);
+    const plotBottom = this.h - this.padBottom;
+    const plotRight = this.w - this.padRight;
+
+    ctx.save();
+    ctx.strokeStyle = '#787b86'; ctx.lineWidth = 1;
+    ctx.setLineDash([4,4]);
+    // vertical line snapped to the nearest bar
+    ctx.beginPath(); ctx.moveTo(vx, this.padTop); ctx.lineTo(vx, plotBottom); ctx.stroke();
+    // horizontal line follows the raw cursor/finger position
+    ctx.beginPath(); ctx.moveTo(0, ch.y); ctx.lineTo(plotRight, ch.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // price label on the right axis
+    const price = max - (ch.y-this.padTop)/(plotBottom-this.padTop)*(max-min);
+    ctx.fillStyle = '#131722'; ctx.fillRect(plotRight, ch.y-9, this.padRight, 18);
+    ctx.fillStyle = '#ffffff'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(fmt(price), plotRight+4, ch.y+3);
+
+    // time label on the bottom axis
+    const bar = series[idx];
+    if (bar){
+      const d = new Date(bar.t);
+      const label = CFG.tfMs[state.tf] >= 86400000 ? d.toLocaleDateString() : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second: CFG.tfMs[state.tf]<60000?'2-digit':undefined});
+      ctx.font='10px sans-serif';
+      const tw = ctx.measureText(label).width + 12;
+      ctx.fillStyle = '#131722'; ctx.fillRect(vx-tw/2, plotBottom, tw, 18);
+      ctx.fillStyle = '#ffffff'; ctx.textAlign='center';
+      ctx.fillText(label, vx, plotBottom+13);
+    }
+    ctx.restore();
+  },
+
+  drawGrid(ctx, min, max, yToPx){
+    ctx.strokeStyle = '#eef0f3'; ctx.lineWidth=1;
+    for (let i=0;i<=5;i++){
+      const price = min + (max-min)*i/5;
+      const y = yToPx(price);
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.w-this.padRight,y); ctx.stroke();
+    }
+  },
+
+  drawCandles(ctx, visible, startIdx, xToPx, yToPx, renderPxPerBar){
+    // Binance-style: solid body ~70% of the bar slot, thin 1px wick regardless of zoom.
+    const bw = Math.max(1, renderPxPerBar*0.7);
+    visible.forEach((b,k)=>{
+      const i = startIdx+k;
+      const x = xToPx(i);
+      const up = b.c>=b.o;
+      ctx.strokeStyle = ctx.fillStyle = up ? '#089981' : '#f23645';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yToPx(b.h)); ctx.lineTo(x, yToPx(b.l)); ctx.stroke();
+      const yO=yToPx(b.o), yC=yToPx(b.c);
+      const top = Math.min(yO,yC), hgt = Math.max(1, Math.abs(yC-yO));
+      ctx.fillRect(x-bw/2, top, bw, hgt);
+    });
+  },
+
+  drawRenko(ctx, visible, startIdx, xToPx, yToPx, renderPxPerBar){
+    // Edge-to-edge solid boxes, width fixed to the column spacing we already committed to
+    // above — no per-brick self-referential sizing, so this can never explode or collapse.
+    const bw = renderPxPerBar;
+    visible.forEach((b,k)=>{
+      const i = startIdx+k;
+      const x = xToPx(i);
+      const up = b.dir>=0;
+      ctx.fillStyle = up? '#089981':'#f23645';
+      const yTop = yToPx(Math.max(b.o,b.c)), yBot = yToPx(Math.min(b.o,b.c));
+      ctx.fillRect(x-bw/2, yTop, bw+0.5, Math.max(1,yBot-yTop)); // +0.5 closes hairline seams
+    });
+  },
+
+  // Renko overlay step-line — exact port of `plot(renko_level, style=stepline)`, colored
+  // green when close > level, red when close < level, gray on exact equality.
+  drawRenkoOverlay(ctx, startIdx, endIdx, xToPx, yToPx){
+    const bricks = state.renkoBricks;
+    if (!bricks.length) return;
+    const candles = state.candles;
+    let prevX=null, prevY=null;
+    for (let i=startIdx;i<=endIdx;i++){
+      const c = candles[i]; if (!c) continue;
+      const bi = nearestBrickIndex(c.t);
+      const brick = bricks[bi]; if (!brick) continue;
+      const x = xToPx(i), y = yToPx(brick.c);
+      if (prevX!=null){
+        ctx.strokeStyle = c.c>brick.c ? '#16a34a' : c.c<brick.c ? '#dc2626' : '#9ca3af';
+        ctx.lineWidth = 1.6;
+        // stepline: horizontal then vertical, matching Pine's style_stepline
+        ctx.beginPath(); ctx.moveTo(prevX,prevY); ctx.lineTo(x,prevY); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prevX=x; prevY=y;
+    }
+  },
+
+  // "Renko Line" on the Renko chart itself: the same renko_level indicator (from the
+  // "Renko Line" engine, using its own independent box size), just placed on the Renko
+  // brick chart's x-axis instead of the candle x-axis — drawn as a proper stepline
+  // (horizontal-then-vertical), matching how it looks on the candlestick chart.
+  drawPriceLineOnRenko(ctx, bricks, startIdx, xToPx, yToPx){
+    const lineBricks = state.renkoBricks;
+    if (!lineBricks.length || !bricks.length) return;
+    ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1.6;
+    let prevX=null, prevY=null;
+    bricks.forEach((b,k)=>{
+      const i = startIdx+k;
+      const li = nearestBrickIndex(b.t);
+      const lb = lineBricks[li]; if (!lb) return;
+      const x = xToPx(i), y = yToPx(lb.c);
+      if (prevX!=null){
+        ctx.beginPath(); ctx.moveTo(prevX,prevY); ctx.lineTo(x,prevY); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prevX=x; prevY=y;
+    });
+  },
+
+  drawPriceScale(ctx, min, max, yToPx, lastPrice){
+    ctx.fillStyle = '#787b86'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+    for (let i=0;i<=5;i++){
+      const price = min + (max-min)*i/5;
+      const y = yToPx(price);
+      ctx.fillText(fmt(price), this.w-this.padRight+4, y+3);
+    }
+  },
+
+  drawTimeAxis(ctx, series, startIdx, endIdx, xToPx){
+    ctx.fillStyle='#787b86'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+    const step = Math.max(1, Math.floor((endIdx-startIdx)/6));
+    for (let i=startIdx;i<=endIdx;i+=step){
+      const b = series[i]; if (!b) continue;
+      const d = new Date(b.t);
+      const label = CFG.tfMs[state.tf] >= 86400000 ? d.toLocaleDateString() : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      ctx.fillText(label, xToPx(i), this.h-6);
+    }
+  },
+
+  updatePriceLabel(price, yToPx){
+    const el = document.getElementById('priceLabel');
+    el.style.display='block';
+    el.style.top = (yToPx(price)-8)+'px';
+    el.textContent = fmt(price);
+  }
+};
+
+function nearestCandleIndex(t){
+  // binary search: last candle index with time <= t (used to map Renko-brick x-positions
+  // back onto the time-based indicator series so overlays can be drawn on the Renko chart too)
+  const arr = state.candles;
+  if (!arr.length) return 0;
+  let lo=0, hi=arr.length-1, ans=0;
+  while (lo<=hi){ const mid=(lo+hi)>>1; if (arr[mid].t<=t){ ans=mid; lo=mid+1; } else hi=mid-1; }
+  return ans;
+}
+function nearestBrickIndex(t){
+  const arr = state.renkoBricks;
+  if (!arr.length) return 0;
+  let lo=0, hi=arr.length-1, ans=0;
+  while (lo<=hi){ const mid=(lo+hi)>>1; if (arr[mid].t<=t){ ans=mid; lo=mid+1; } else hi=mid-1; }
+  return ans;
+}
+
+const Overlays = {
+  drawEMA(ctx, startIdx, endIdx, xToPx, yToPx){
+    for (const line of state.indicators.ema){
+      const arr = Indicators.ema[line.period]; if (!arr) continue;
+      this.line(ctx, arr, startIdx, endIdx, xToPx, yToPx, line.color);
+    }
+  },
+  drawEMAOnRenko(ctx, bricks, startIdx, endIdx, xToPx, yToPx){
+    for (const line of state.indicators.ema){
+      const arr = Indicators.ema[line.period]; if (!arr) continue;
+      ctx.strokeStyle = line.color; ctx.lineWidth=1.3; ctx.beginPath(); let started=false;
+      for (let i=startIdx;i<=endIdx;i++){
+        const b = bricks[i-startIdx]; if (!b) continue;
+        const ci = nearestCandleIndex(b.t); const v = arr[ci]; if (v==null) continue;
+        const x=xToPx(i), y=yToPx(v);
+        if (!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+  },
+  drawIchimokuBg(ctx, startIdx, endIdx, xToPx, yToPx){
+    // Classic Ichimoku Kumo — forward-displaced (offset = displacement-1 = 25 bars).
+    // Pine plots Span A/B lines fully invisible (opacity 100) — only the fill between them
+    // is shown, colored green when Span A is above Span B, red when Span B is above (opacity 85 → ~15% alpha).
+    const { spanA, spanB, displacement } = Indicators.ichimoku;
+    const disp = displacement!=null ? displacement : 25;
+    let segStart = startIdx, segBull = null;
+    for (let i=startIdx;i<=endIdx;i++){
+      const si = i-disp;
+      const bull = (si>=0 && spanA[si]!=null && spanB[si]!=null) ? (spanA[si]>=spanB[si]) : null;
+      const flip = (i===endIdx) || (bull===null) || (segBull!==null && bull!==segBull);
+      if (segBull===null && bull!==null) segBull = bull;
+      if (flip && segBull!==null){
+        ctx.beginPath(); let s=false;
+        const segEnd = (bull===null) ? i-1 : i;
+        for (let j=segStart;j<=segEnd;j++){ const sj=j-disp; if (sj<0||spanA[sj]==null) continue; const x=xToPx(j), y=yToPx(spanA[sj]); if(!s){ctx.moveTo(x,y);s=true;} else ctx.lineTo(x,y); }
+        for (let j=segEnd;j>=segStart;j--){ const sj=j-disp; if (sj<0||spanB[sj]==null) continue; ctx.lineTo(xToPx(j), yToPx(spanB[sj])); }
+        ctx.closePath();
+        ctx.fillStyle = segBull ? 'rgba(22,163,74,.15)' : 'rgba(220,38,38,.15)'; // green / red, ~15% alpha (Pine opacity 85)
+        ctx.fill();
+        segStart = i; segBull = bull;
+      }
+    }
+  },
+
+  // ---- SuperIchi (candlestick mode): cloud is the fill between Tenkan and Kijun —
+  // teal when Tenkan > Kijun (bullish), red when Kijun > Tenkan (bearish). Drawn BEHIND candles.
+  drawSuperIchiBg(ctx, startIdx, endIdx, xToPx, yToPx){
+    const { tenkan, kijun } = Indicators.superIchi;
+    let segStart = startIdx;
+    for (let i=startIdx;i<=endIdx;i++){
+      const bull = tenkan[i]!=null && kijun[i]!=null ? (tenkan[i]>kijun[i]) : null;
+      const nextBull = (i<endIdx && tenkan[i+1]!=null && kijun[i+1]!=null) ? (tenkan[i+1]>kijun[i+1]) : null;
+      const flip = (i===endIdx) || (nextBull!==bull);
+      if (flip && bull!==null){
+        ctx.beginPath(); let s=false;
+        for (let j=segStart;j<=i;j++){ if (tenkan[j]==null) continue; const x=xToPx(j), y=yToPx(tenkan[j]); if(!s){ctx.moveTo(x,y);s=true;} else ctx.lineTo(x,y); }
+        for (let j=i;j>=segStart;j--){ if (kijun[j]==null) continue; ctx.lineTo(xToPx(j), yToPx(kijun[j])); }
+        ctx.closePath();
+        ctx.fillStyle = bull ? 'rgba(0,128,128,.4)' : 'rgba(220,38,38,.4)'; // teal / red, Pine opacity 60 -> ~40% alpha
+        ctx.fill();
+        segStart = i+1;
+      }
+    }
+  },
+  drawSuperIchiFg(ctx, startIdx, endIdx, xToPx, yToPx){
+    const { tenkan, kijun } = Indicators.superIchi;
+    ctx.lineWidth=1.6;
+    this.line(ctx, tenkan, startIdx, endIdx, xToPx, yToPx, '#2157f3'); // Tenkan
+    this.line(ctx, kijun, startIdx, endIdx, xToPx, yToPx, '#ff5d00');  // Kijun
+    // Buy/Sell crossover markers (ta.crossover/crossunder of tenkan vs kijun)
+    const { signal } = Indicators.superIchi;
+    const candles = state.candles;
+    for (let i=startIdx;i<=endIdx;i++){
+      if (!signal[i] || !candles[i]) continue;
+      const x = xToPx(i);
+      if (signal[i]===1){
+        const y = yToPx(candles[i].l)+10;
+        ctx.fillStyle='#16a34a'; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-5,y+9); ctx.lineTo(x+5,y+9); ctx.closePath(); ctx.fill();
+      } else {
+        const y = yToPx(candles[i].h)-10;
+        ctx.fillStyle='#dc2626'; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-5,y-9); ctx.lineTo(x+5,y-9); ctx.closePath(); ctx.fill();
+      }
+    }
+  },
+
+  // ---- SuperIchi (Renko mode): same two lines, x mapped to nearest brick by time ----
+  drawSuperIchiBgOnRenko(ctx, bricks, startIdx, endIdx, xToPx, yToPx){
+    const { tenkan, kijun } = Indicators.superIchi;
+    let segStart = startIdx;
+    const ciAt = (i) => { const b=bricks[i-startIdx]; return b ? nearestCandleIndex(b.t) : null; };
+    for (let i=startIdx;i<=endIdx;i++){
+      const ci = ciAt(i);
+      const bull = (ci!=null && tenkan[ci]!=null && kijun[ci]!=null) ? (tenkan[ci]>kijun[ci]) : null;
+      const ciNext = i<endIdx ? ciAt(i+1) : null;
+      const nextBull = (ciNext!=null && tenkan[ciNext]!=null && kijun[ciNext]!=null) ? (tenkan[ciNext]>kijun[ciNext]) : null;
+      const flip = (i===endIdx) || (nextBull!==bull);
+      if (flip && bull!==null){
+        ctx.beginPath(); let s=false;
+        for (let j=segStart;j<=i;j++){ const cj=ciAt(j); if (cj==null||tenkan[cj]==null) continue; const x=xToPx(j), y=yToPx(tenkan[cj]); if(!s){ctx.moveTo(x,y);s=true;} else ctx.lineTo(x,y); }
+        for (let j=i;j>=segStart;j--){ const cj=ciAt(j); if (cj==null||kijun[cj]==null) continue; ctx.lineTo(xToPx(j), yToPx(kijun[cj])); }
+        ctx.closePath();
+        ctx.fillStyle = bull ? 'rgba(0,128,128,.4)' : 'rgba(220,38,38,.4)';
+        ctx.fill();
+        segStart = i+1;
+      }
+    }
+  },
+  drawSuperIchiFgOnRenko(ctx, bricks, startIdx, endIdx, xToPx, yToPx){
+    const { tenkan, kijun } = Indicators.superIchi;
+    ctx.lineWidth=1.6;
+    for (const [arr,color] of [[tenkan,'#2157f3'],[kijun,'#ff5d00']]){
+      ctx.strokeStyle = color; ctx.beginPath(); let started=false;
+      for (let i=startIdx;i<=endIdx;i++){
+        const b = bricks[i-startIdx]; if (!b) continue;
+        const ci = nearestCandleIndex(b.t); if (arr[ci]==null) continue;
+        const x=xToPx(i), y=yToPx(arr[ci]);
+        if (!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+  },
+
+  drawZlema(ctx, startIdx, endIdx, xToPx, yToPx){
+    const { zlema, color } = Indicators.kalmanZlema;
+    for (let i=startIdx;i<endIdx;i++){
+      if (zlema[i]==null || zlema[i+1]==null) continue;
+      ctx.strokeStyle = color[i+1]==='bull' ? '#2563eb' : '#dc2626';
+      ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.moveTo(xToPx(i), yToPx(zlema[i])); ctx.lineTo(xToPx(i+1), yToPx(zlema[i+1])); ctx.stroke();
+    }
+  },
+  drawZlemaOnRenko(ctx, bricks, startIdx, endIdx, xToPx, yToPx){
+    const { zlema, color } = Indicators.kalmanZlema;
+    ctx.lineWidth=1.6;
+    let prevX=null, prevY=null, prevColor=null;
+    for (let i=startIdx;i<=endIdx;i++){
+      const b = bricks[i-startIdx]; if (!b) continue;
+      const ci = nearestCandleIndex(b.t); if (zlema[ci]==null) continue;
+      const x=xToPx(i), y=yToPx(zlema[ci]);
+      if (prevX!=null){
+        ctx.strokeStyle = color[ci]==='bull' ? '#2563eb' : '#dc2626';
+        ctx.beginPath(); ctx.moveTo(prevX,prevY); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prevX=x; prevY=y;
+    }
+  },
+
+  // ---- Classic Supertrend ----
+  drawSupertrend(ctx, startIdx, endIdx, xToPx, yToPx){
+    const { line, dir } = Indicators.supertrend;
+    const candles = state.candles;
+    ctx.lineWidth=1.8;
+    let prevX=null, prevY=null;
+    for (let i=startIdx;i<=endIdx;i++){
+      if (line[i]==null) continue;
+      const x=xToPx(i), y=yToPx(line[i]);
+      if (prevX!=null && dir[i]===dir[i-1]){
+        ctx.strokeStyle = dir[i]===1 ? '#089981' : '#f23645';
+        ctx.beginPath(); ctx.moveTo(prevX,prevY); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prevX=x; prevY=y;
+      // Buy/Sell label at each flip, with a small triangle marker
+      if (i>0 && dir[i]!==dir[i-1] && candles[i]){
+        const bull = dir[i]===1;
+        const color = bull ? '#089981' : '#f23645';
+        const my = bull ? yToPx(candles[i].l)+16 : yToPx(candles[i].h)-16;
+        ctx.fillStyle = color; ctx.beginPath();
+        if (bull){ ctx.moveTo(x,my-6); ctx.lineTo(x-5,my+3); ctx.lineTo(x+5,my+3); }
+        else { ctx.moveTo(x,my+6); ctx.lineTo(x-5,my-3); ctx.lineTo(x+5,my-3); }
+        ctx.closePath(); ctx.fill();
+        ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+        ctx.fillText(bull ? 'BUY' : 'SELL', x, bull ? my+16 : my-10);
+      }
+    }
+  },
+  drawSupertrendOnRenko(ctx, bricks, startIdx, endIdx, xToPx, yToPx){
+    // Uses the Renko-native series (Indicators.supertrendRenko), indexed the same way as
+    // the bricks themselves — absolute index i lines up directly, no time-mapping needed.
+    const { line, dir } = Indicators.supertrendRenko;
+    ctx.lineWidth=1.8;
+    let prevX=null, prevY=null;
+    for (let i=startIdx;i<=endIdx;i++){
+      if (line[i]==null) continue;
+      const b = bricks[i-startIdx];
+      const x=xToPx(i), y=yToPx(line[i]);
+      if (prevX!=null && dir[i]===dir[i-1]){
+        ctx.strokeStyle = dir[i]===1 ? '#089981' : '#f23645';
+        ctx.beginPath(); ctx.moveTo(prevX,prevY); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prevX=x; prevY=y;
+      if (i>0 && dir[i]!==dir[i-1] && b){
+        const bull = dir[i]===1;
+        const color = bull ? '#089981' : '#f23645';
+        const my = bull ? yToPx(Math.min(b.o,b.c))+16 : yToPx(Math.max(b.o,b.c))-16;
+        ctx.fillStyle = color; ctx.beginPath();
+        if (bull){ ctx.moveTo(x,my-6); ctx.lineTo(x-5,my+3); ctx.lineTo(x+5,my+3); }
+        else { ctx.moveTo(x,my+6); ctx.lineTo(x-5,my-3); ctx.lineTo(x+5,my-3); }
+        ctx.closePath(); ctx.fill();
+        ctx.font='bold 10px sans-serif'; ctx.textAlign='center';
+        ctx.fillText(bull ? 'BUY' : 'SELL', x, bull ? my+16 : my-10);
+      }
+    }
+  },
+
+  // ---- Reversal Zones — core box + outer box + glow/solid center line at the pivot,
+  // extending `levelExtend` bars to the right. Exact sizing from the Pine source.
+  drawReversalZones(ctx, startIdx, endIdx, xToPx, yToPx){
+    const events = Indicators.reversalZones.events;
+    const ext = state.settings.rzLevelExtend;
+    events.forEach((ev) => {
+      if (ev.pivotBar>endIdx+5 || ev.pivotBar+ext<startIdx-2) return;
+      const bull = ev.type==='BULLISH REVERSAL';
+      const color = bull ? [0,185,120] : [235,64,64];
+      const [r,g,b] = color;
+      const coreHalf = Math.max(ev.atr*0.12, Math.abs(ev.pivotPrice)*0.00015);
+      const outerHalf = coreHalf*2.15;
+      const x1 = xToPx(ev.pivotBar), x2 = xToPx(Math.min(ev.pivotBar+ext, endIdx));
+      const yC = yToPx(ev.pivotPrice);
+
+      // outer box (very faint)
+      ctx.fillStyle = `rgba(${r},${g},${b},0.06)`; ctx.strokeStyle = `rgba(${r},${g},${b},0.28)`; ctx.lineWidth=1;
+      const yOuterTop = yToPx(ev.pivotPrice+outerHalf), yOuterBot = yToPx(ev.pivotPrice-outerHalf);
+      ctx.fillRect(x1, yOuterTop, Math.max(1,x2-x1), yOuterBot-yOuterTop);
+      ctx.strokeRect(x1, yOuterTop, Math.max(1,x2-x1), yOuterBot-yOuterTop);
+      // core box (a bit more solid)
+      ctx.fillStyle = `rgba(${r},${g},${b},0.16)`; ctx.strokeStyle = `rgba(${r},${g},${b},0.76)`; ctx.lineWidth=1.5;
+      const yCoreTop = yToPx(ev.pivotPrice+coreHalf), yCoreBot = yToPx(ev.pivotPrice-coreHalf);
+      ctx.fillRect(x1, yCoreTop, Math.max(1,x2-x1), yCoreBot-yCoreTop);
+      ctx.strokeRect(x1, yCoreTop, Math.max(1,x2-x1), yCoreBot-yCoreTop);
+      // glow + solid center line
+      ctx.strokeStyle = `rgba(${r},${g},${b},0.16)`; ctx.lineWidth=8;
+      ctx.beginPath(); ctx.moveTo(x1,yC); ctx.lineTo(x2,yC); ctx.stroke();
+      ctx.strokeStyle = `rgb(${r},${g},${b})`; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(x1,yC); ctx.lineTo(x2,yC); ctx.stroke();
+    });
+  },
+  // Same pivot events, mapped onto the Renko brick x-axis by nearest timestamp
+  drawReversalZonesOnRenko(ctx, startIdx, endIdx, xToPx, yToPx){
+    const events = Indicators.reversalZones.events;
+    const ext = state.settings.rzLevelExtend;
+    events.forEach((ev) => {
+      const pivotBrickIdx = nearestBrickIndex(ev.pivotT!=null ? ev.pivotT : ev.t);
+      if (pivotBrickIdx>endIdx+5 || pivotBrickIdx+ext<startIdx-2) return;
+      const bull = ev.type==='BULLISH REVERSAL';
+      const [r,g,b] = bull ? [0,185,120] : [235,64,64];
+      const coreHalf = Math.max(ev.atr*0.12, Math.abs(ev.pivotPrice)*0.00015);
+      const outerHalf = coreHalf*2.15;
+      const x1 = xToPx(pivotBrickIdx), x2 = xToPx(Math.min(pivotBrickIdx+ext, endIdx));
+      const yC = yToPx(ev.pivotPrice);
+      ctx.fillStyle = `rgba(${r},${g},${b},0.06)`; ctx.strokeStyle = `rgba(${r},${g},${b},0.28)`; ctx.lineWidth=1;
+      const yOuterTop = yToPx(ev.pivotPrice+outerHalf), yOuterBot = yToPx(ev.pivotPrice-outerHalf);
+      ctx.fillRect(x1, yOuterTop, Math.max(1,x2-x1), yOuterBot-yOuterTop);
+      ctx.strokeRect(x1, yOuterTop, Math.max(1,x2-x1), yOuterBot-yOuterTop);
+      ctx.fillStyle = `rgba(${r},${g},${b},0.16)`; ctx.strokeStyle = `rgba(${r},${g},${b},0.76)`; ctx.lineWidth=1.5;
+      const yCoreTop = yToPx(ev.pivotPrice+coreHalf), yCoreBot = yToPx(ev.pivotPrice-coreHalf);
+      ctx.fillRect(x1, yCoreTop, Math.max(1,x2-x1), yCoreBot-yCoreTop);
+      ctx.strokeRect(x1, yCoreTop, Math.max(1,x2-x1), yCoreBot-yCoreTop);
+      ctx.strokeStyle = `rgba(${r},${g},${b},0.16)`; ctx.lineWidth=8;
+      ctx.beginPath(); ctx.moveTo(x1,yC); ctx.lineTo(x2,yC); ctx.stroke();
+      ctx.strokeStyle = `rgb(${r},${g},${b})`; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(x1,yC); ctx.lineTo(x2,yC); ctx.stroke();
+    });
+  },
+  drawBreakoutBadges(ctx, lastX, lastY){
+    const bo = Indicators.breakout;
+    if (!bo.table || !bo.table.length) return;
+    ctx.font='bold 11px sans-serif'; ctx.textAlign='right';
+    ctx.fillStyle='#16a34a'; ctx.fillText(bo.highPct.toFixed(1), lastX-6, lastY-28);
+    ctx.fillStyle='#dc2626'; ctx.fillText(bo.lowPct.toFixed(1), lastX-6, lastY-12);
+  },
+  line(ctx, arr, startIdx, endIdx, xToPx, yToPx, color){
+    ctx.strokeStyle=color; ctx.lineWidth=1.2; ctx.beginPath(); let started=false;
+    for (let i=startIdx;i<=endIdx;i++){
+      const v=arr[i]; if (v==null) continue;
+      const x=xToPx(i), y=yToPx(v);
+      if (!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+};
+
+/* ---------------------------------------------------------------------
+   7. DASHBOARDS (side panel readouts)
+   --------------------------------------------------------------------- */
+const Dashboards = {
+  update(){
+    updateLivePriceBar();
+    const st = Indicators.supertrend;
+    const n = state.candles.length;
+    const stEl = document.getElementById('stValue'), trendEl = document.getElementById('stTrend');
+    if (stEl && st.line && st.line[n-1]!=null){
+      stEl.textContent = fmt(st.line[n-1]);
+      trendEl.innerHTML = st.dir[n-1]===1 ? '<span class="tag bull">Bullish</span>' : '<span class="tag bear">Bearish</span>';
+    } else if (stEl){
+      stEl.textContent = '—'; trendEl.innerHTML = '<span class="tag none">Neutral</span>';
+    }
+  }
+};
+
+function fmt(v){
+  if (v==null || isNaN(v)) return '—';
+  return v >= 1000 ? v.toFixed(2) : v.toFixed(4);
+}
+function setStatus(live, text){
+  state.wsConnected = live;
+  document.getElementById('ledDot').classList.toggle('live', live);
+  const fsDot = document.getElementById('ledDotFs');
+  if (fsDot) fsDot.classList.toggle('live', live);
+}
+// Banner UI removed per request — kept as a no-op so existing showBanner(...) call sites
+// elsewhere don't need to be touched.
+function showBanner(msg){ /* intentionally no-op */ }
+
+/* ---------------------------------------------------------------------
+   8. UI WIRING
+   --------------------------------------------------------------------- */
+function buildTfSelect(){
+  const sel = document.getElementById('tfSelect');
+  // Capped at 5 minutes per request — no Hours/Days groups anymore.
+  const groups = {
+    Seconds:['1s','3s','5s','15s','30s'],
+    Minutes:['1m','2m','3m','5m']
+  };
+  sel.innerHTML='';
+  for (const g in groups){
+    const og = document.createElement('optgroup'); og.label=g;
+    groups[g].forEach(tf=>{ const o=document.createElement('option'); o.value=tf; o.textContent=tf; og.appendChild(o); });
+    sel.appendChild(og);
+  }
+  sel.value = state.tf;
+  // Guard against a saved layout carrying an old >5m timeframe (from before this cap) —
+  // sel.value would silently fail to match any option, leaving the dropdown showing
+  // nothing while state.tf still points at a timeframe that's no longer selectable.
+  if (sel.value !== state.tf){
+    state.tf = '1m';
+    sel.value = state.tf;
+  }
+}
+
+function bindUI(){
+  buildTfSelect();
+
+  document.getElementById('symbolSelect').onchange = async e=>{
+    state.symbol = e.target.value;
+    saveLayout();
+    await loadSymbolAndTf();
+  };
+  document.getElementById('tfSelect').onchange = async e=>{
+    state.tf = e.target.value;
+    saveLayout();
+    await loadSymbolAndTf();
+  };
+  document.getElementById('btnRenkoLine').onclick = e=>{
+    state.renkoOverlay = !state.renkoOverlay;
+    e.target.classList.toggle('active', state.renkoOverlay);
+    saveLayout();
+    Render.draw();
+  };
+  document.getElementById('btnFullscreen').onclick = ()=>{
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+    else document.exitFullscreen();
+  };
+  // In fullscreen we hide everything except the chart itself, replacing the topbar's
+  // symbol/price info with a compact overlay tag drawn on top of the canvas.
+  document.addEventListener('fullscreenchange', ()=>{
+    const app = document.getElementById('app');
+    app.classList.toggle('fs-mode', !!document.fullscreenElement);
+    updateLivePriceBar();
+    Render.resize();
+    Render.draw();
+  });
+  // Single button exits fullscreen. A second small button (fsIndicatorsBtn) gives access
+  // to the Indicators panel while in fullscreen, since the topbar itself is hidden there.
+  document.getElementById('fsToggleTopbar').onclick = ()=>{
+    if (document.fullscreenElement) document.exitFullscreen();
+  };
+  // Indicators dropdown: the panel now lives outside the topbar (so it still works while
+  // fullscreen hides the topbar) and positions itself under whichever button opened it.
+  const indicatorDropdown = document.getElementById('indicatorDropdown');
+  const openDropdownNear = (btn) => {
+    const r = btn.getBoundingClientRect();
+    indicatorDropdown.style.top = (r.bottom + 4) + 'px';
+    // Keep the panel on-screen: align its right edge to the button's right edge.
+    indicatorDropdown.style.right = (window.innerWidth - r.right) + 'px';
+    indicatorDropdown.style.left = 'auto';
+    indicatorDropdown.classList.toggle('hidden');
+  };
+  document.getElementById('btnIndicators').onclick = e=>{
+    e.stopPropagation();
+    openDropdownNear(e.currentTarget);
+  };
+  document.getElementById('fsIndicatorsBtn').onclick = e=>{
+    e.stopPropagation();
+    openDropdownNear(e.currentTarget);
+  };
+  indicatorDropdown.addEventListener('click', e=> e.stopPropagation());
+  document.addEventListener('click', ()=> indicatorDropdown.classList.add('hidden'));
+  const toggleMap = { btnST:'supertrend' };
+  Object.entries(toggleMap).forEach(([btnId,key])=>{
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.classList.toggle('active', !!state.indicators[key]);
+    btn.onclick = ()=>{
+      state.indicators[key] = !state.indicators[key];
+      btn.classList.toggle('active', state.indicators[key]);
+      saveLayout();
+      Indicators.recompute(); // recompute is now conditional on what's toggled on, so a fresh toggle needs this
+      Render.draw();
+    };
+  });
+
+  document.getElementById('btnSettings').onclick = ()=>{
+    document.getElementById('settingsDrawer').classList.add('open');
+    document.getElementById('drawerBackdrop').classList.add('show');
+  };
+  const closeDrawer = ()=>{ document.getElementById('settingsDrawer').classList.remove('open'); document.getElementById('drawerBackdrop').classList.remove('show'); };
+  document.getElementById('closeSettings').onclick = closeDrawer;
+  document.getElementById('drawerBackdrop').onclick = closeDrawer;
+
+  const settingsInputs = {
+    renkoMode:'renkoMode', renkoSize:'renkoSize',
+    rlMode:'rlMode', rlSize:'rlSize',
+    stPeriod:'stPeriod', stMult:'stMult', stSource:'stSource'
+  };
+  Object.entries(settingsInputs).forEach(([elId,key])=>{
+    const el = document.getElementById(elId);
+    el.onchange = ()=>{
+      const val = el.type==='number' ? parseFloat(el.value) : el.value;
+      state.settings[key] = val;
+      if (key==='renkoSize' || key==='rlSize') state.userSetRenkoSize = true; // manual edit — stop ATR(7)-daily auto-sizing from overriding it
+      if (key==='renkoMode' || key==='renkoSize'){
+        ClassicRenko.reset(state.baseCandles);
+      }
+      if (key==='rlMode' || key==='rlSize'){
+        RenkoEngine.reset(state.baseCandles);
+      }
+      saveLayout();
+      Indicators.recompute();
+      Render.draw();
+    };
+  });
+}
+
+// Fetch a small run of 1d candles for a symbol — used only to compute a daily ATR(7),
+// independent of whatever intraday timeframe is currently on screen.
+async function fetchDailyCandles(displaySymbol, limit=40){
+  const symbol = apiSymbol(displaySymbol);
+  const url = `${restBaseFor(displaySymbol)}${klinesPathFor(displaySymbol)}?symbol=${symbol}&interval=1d&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('REST ' + res.status);
+  const raw = await res.json();
+  return raw.map(k => ({ t:k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5] }));
+}
+
+// Box-size rule (per request): Renko Line box = ATR(7) computed on the 1-day timeframe
+// for the current ticker (i.e. Wilder ATR over the last 7 daily candles, in price points,
+// not %). The Renko brick box (the actual Renko chart) is that same ATR(7) value divided
+// by 24. Both are set as FIXED point sizes (not percentage) since ATR is already a price
+// value. Recomputed once per symbol — daily ATR doesn't change when just switching
+// intraday timeframes — and skipped entirely once the person manually edits a box size.
+async function applyAtrRenkoSizing(){
+  if (state.lastAtrSymbol === state.symbol) return; // already computed for this symbol
+  if (state.userSetRenkoSize) { state.lastAtrSymbol = state.symbol; return; } // manual override — leave it alone
+  try{
+    const daily = await fetchDailyCandles(state.symbol, 40);
+    if (daily.length < 8) return; // not enough bars for a meaningful ATR(7)
+    const atr = atrSeries(daily, 7);
+    const atr7 = atr[atr.length-1];
+    if (!atr7 || !isFinite(atr7) || atr7 <= 0) return;
+
+    const rlSize = atr7;
+    const brickSize = atr7 / 24;
+
+    state.settings.rlMode = 'fixed';
+    state.settings.rlSize = +rlSize.toFixed(6);
+    state.settings.renkoMode = 'fixed';
+    state.settings.renkoSize = +brickSize.toFixed(6);
+    state.lastAtrSymbol = state.symbol;
+    saveLayout();
+
+    const renkoModeSel = document.getElementById('renkoMode'); if (renkoModeSel) renkoModeSel.value = 'fixed';
+    const renkoSizeInp = document.getElementById('renkoSize'); if (renkoSizeInp) renkoSizeInp.value = state.settings.renkoSize;
+    const rlModeSel = document.getElementById('rlMode'); if (rlModeSel) rlModeSel.value = 'fixed';
+    const rlSizeInp = document.getElementById('rlSize'); if (rlSizeInp) rlSizeInp.value = state.settings.rlSize;
+  } catch(e){
+    console.warn('ATR(7)-daily Renko sizing failed — keeping previous box size', e);
+  }
+}
+
+/* ---------------------------------------------------------------------
+   9. BOOTSTRAP
+   --------------------------------------------------------------------- */
+async function refresh24hTicker(){
+  try{
+    const symbol = apiSymbol(state.symbol);
+    const path = marketFor(state.symbol)==='futures' ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr';
+    const url = `${restBaseFor(state.symbol)}${path}?symbol=${symbol}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    state.dayOpenPrice = +data.openPrice || null;
+  } catch(e){ /* keep whatever reference we already had */ }
+}
+function updateLivePriceBar(){
+  const c = state.candles;
+  const fsInfo = document.getElementById('fsInfo');
+  if (!fsInfo) return;
+  if (!document.fullscreenElement || !c.length){ fsInfo.style.display='none'; return; }
+  fsInfo.style.display='flex';
+  const symEl = document.getElementById('fsSymbol'), priceEl = document.getElementById('fsPrice'), chEl = document.getElementById('fsChange');
+  symEl.textContent = `${state.symbol} · ${state.tf}`;
+  const last = c[c.length-1].c;
+  priceEl.textContent = fmt(last);
+  if (state.dayOpenPrice){
+    const diff = last - state.dayOpenPrice;
+    const pct = diff/state.dayOpenPrice*100;
+    const sign = diff>=0 ? '+' : '';
+    chEl.textContent = `${sign}${fmt(diff)} (${sign}${pct.toFixed(2)}%)`;
+    chEl.className = diff>=0 ? 'up' : 'dn';
+    priceEl.className = diff>=0 ? 'up' : 'dn';
+  } else {
+    chEl.textContent = ''; chEl.className = '';
+    priceEl.className = '';
+  }
+}
+let tickerTimer = null;
+
+async function loadSymbolAndTf(){
+  await applyAtrRenkoSizing(); // symbol-specific box sizing must be in place before bricks are built below
+  setStatus(false, 'loading history…');
+  const { candles: hist, baseInterval } = await fetchHistorical(state.symbol, state.tf);
+  const futuresSeconds = marketFor(state.symbol)==='futures' && CFG.tfMs[state.tf] < 60000;
+  if (futuresSeconds){
+    // Futures REST klines don't go below 1m, so `hist`/`baseInterval` here are 1m bars used
+    // purely to seed history. connectWS() below switches to the aggTrade stream and builds
+    // real live 1s bars on top of this — state.tf stays exactly what the person picked.
+    state.baseInterval = baseInterval; // '1m', until the first live trade tick arrives and flips this to '1s'
+    showBanner(`${state.symbol} futures has no 1s history on Binance — building live 1s bars from trades now.`);
+  } else if (baseInterval !== pickBaseInterval(state.tf)){
+    // If the requested timeframe wasn't available and fetchHistorical fell back to a
+    // coarser interval, keep the UI honest about what's actually being shown instead of
+    // silently rendering 1m candles while the dropdown still says "1s".
+    const requestedTf = state.tf;
+    state.tf = baseInterval;
+    state.baseInterval = baseInterval;
+    const tfSel = document.getElementById('tfSelect');
+    if (tfSel) tfSel.value = state.tf;
+    saveLayout();
+    showBanner(`${state.symbol} doesn't publish ${requestedTf} klines on Binance — showing ${baseInterval} instead.`);
+  } else {
+    state.baseInterval = baseInterval;
+  }
+  state.baseCandles = hist;
+  rebuildAggregation();
+  RenkoEngine.reset(hist);
+  ClassicRenko.reset(hist);
+  // Box sizing is now handled up-front by applyAtrRenkoSizing() (ATR(7)-daily / 48 rule),
+  // so no separate sparse-brick fallback is needed here anymore.
+  Indicators.recompute();
+  Render.resize();
+  Render.fitToView();
+  Render.draw();
+  connectWS();
+  refresh24hTicker();
+  if (tickerTimer) clearInterval(tickerTimer);
+  tickerTimer = setInterval(refresh24hTicker, 20000);
+}
+
+/* ---------------------------------------------------------------------
+   10. LAYOUT PERSISTENCE — this is a standalone file the person runs
+   directly in their own browser (not a claude.ai Artifact iframe), so
+   localStorage works normally here and is the right tool for "remember
+   my settings" instead of re-configuring everything on every reload.
+   --------------------------------------------------------------------- */
+const LAYOUT_KEY = 'ankitV4_layout_v1';
+function saveLayout(){
+  try{
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({
+      symbol: state.symbol, tf: state.tf, chartType: state.chartType,
+      renkoOverlay: state.renkoOverlay, yZoom: state.yZoom,
+      indicators: state.indicators, settings: state.settings
+    }));
+  } catch(e){ /* storage unavailable/full — not critical, ignore */ }
+}
+function loadLayout(){
+  try{
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.symbol) state.symbol = saved.symbol;
+    if (saved.tf) state.tf = saved.tf;
+    // chartType intentionally not restored — this build is renko-only.
+    if (typeof saved.renkoOverlay==='boolean') state.renkoOverlay = saved.renkoOverlay;
+    if (typeof saved.yZoom==='number') state.yZoom = saved.yZoom;
+    if (saved.indicators) Object.assign(state.indicators, saved.indicators);
+    if (saved.settings) Object.assign(state.settings, saved.settings);
+  } catch(e){ /* corrupt/blocked storage — just start fresh */ }
+}
+function syncUIFromState(){
+  document.getElementById('symbolSelect').value = state.symbol;
+  document.getElementById('tfSelect').value = state.tf;
+  document.getElementById('btnRenkoLine').classList.toggle('active', state.renkoOverlay);
+  document.getElementById('btnST').classList.toggle('active', !!state.indicators.supertrend);
+  const map = { renkoMode:'renkoMode', renkoSize:'renkoSize', rlMode:'rlMode', rlSize:'rlSize', stPeriod:'stPeriod', stMult:'stMult', stSource:'stSource' };
+  Object.entries(map).forEach(([elId,key])=>{
+    const el = document.getElementById(elId);
+    if (el) el.value = state.settings[key];
+  });
+}
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  loadLayout();
+  Render.init();
+  bindUI();
+  syncUIFromState();
+  await loadSymbolAndTf();
+});
+
+// Mobile screen-lock / tab-switch is the most common real cause of the WS silently dying —
+// as soon as the page is visible again, force an immediate reconnect instead of waiting
+// out the backoff timer.
+document.addEventListener('visibilitychange', ()=>{
+  if (!document.hidden && !state.wsConnected){
+    reconnectDelay = 1000;
+    connectWS();
+  }
+});
+
+</script>
+</body>
+</html>
